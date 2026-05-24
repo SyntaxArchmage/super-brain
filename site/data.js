@@ -57,7 +57,7 @@ const WIKI = {
       type: "article",
       meta: [
         { text: "Primary sources: 36 official documents", dot: "#2563eb" },
-        { text: "Concepts: 29 entities" },
+        { text: "Concepts: 31 entities" },
         { text: "Cross-references: 4 pages" }
       ],
       body: `
@@ -1679,6 +1679,61 @@ def MyOp : Op<"my.op", [SameOperandsAndResultType]> { ... }
       usedIn: ["mlir", "compiler-ai-infra"],
       sources: [
         { label: "MLIR Shape Inference", url: "https://mlir.llvm.org/docs/ShapeInference/" }
+      ]
+    },
+    quantizedType: {
+      name: "QuantizedType",
+      role: "Type System",
+      summary: "Bridges floating-point expressed semantics with integral storage representation — records scale, zero-point, and per-layer/per-axis quantization parameters as a dialect type.",
+      definition: "QuantizedType (notably UniformQuantizedType) wraps the mapping real_value = (storage_value - zero_point) * scale, pairing an expressed type (float) with a storage type (integer). Cast ops (qcast, dcast, scast) move values between expressed, quantized, and raw storage types while preserving quantization metadata. Training-time fake_quant is lowered to qcast→dcast pairs, letting the compiler fold casts, partially quantize graphs, and replace DQ→op→Q sandwiches with native quantized ops.",
+      examples: `<pre>// Float tensor → quantized storage via cast ops:
+%q = quant.qcast %f : tensor<4xf32>
+     -> !quant.uniform<ui8:f32, 0.1:128>
+%stored = quant.scast %q : !quant.uniform<...> -> tensor<4xui8>
+
+// Dequantize back for mixed-precision regions:
+%f2 = quant.dcast %q : !quant.uniform<...> -> tensor<4xf32>
+
+// Per-axis quantization (channel dimension = 3):
+!quant.uniform<i8:f32:3, {0.1:10, 0.2:20, 0.15:15, 0.3:30}>
+
+// TFLite pattern: fold (DQ, op, Q) into quantized op
+// tfl.dequantize → tfl.conv_2d → tfl.quantize
+//   becomes: tfl.conv_2d_quantized (native)</pre>
+<p>Affine quantization (with zero_point) ensures real zero is exactly representable — required for unbiased zero-padding in convolutions.</p>`,
+      related: ["Attribute", "Dialect", "TypeConverter", "Lowering", "Fold"],
+      usedIn: ["mlir", "compiler-ai-infra"],
+      sources: [
+        { label: "MLIR Quantization Specification", url: "https://mlir.llvm.org/docs/Quantization/" }
+      ]
+    },
+    bytecodeFormat: {
+      name: "Bytecode Format",
+      role: "Infrastructure",
+      summary: "Versioned binary serialization format for MLIR IR — compact storage and fast load/save via sectioned layout, shared tables, and lazy attribute loading.",
+      definition: "An MLIR bytecode file begins with magic number 'MLïR', a format version varint, a producer string, and ordered sections (string table, dialect registry, attribute/type pools with offset tables, resources, IR). Operations share one encoding schema: a name index, an encodingMask bitmask marking optional fields, and inline or sectioned region data. Dialects may opt into custom encodings via BytecodeDialectInterface for schema migrations; without one, textual assembly format strings serve as fallback.",
+      examples: `<pre>// Textual IR (human-readable):
+func.func @foo(%arg0: i32) -> i32 {
+  %0 = arith.addi %arg0, %arg0 : i32
+  return %0 : i32
+}
+
+// On disk: magic "MLïR" + version + sections
+// File layout:
+//   [4B magic] [varint version] [null-term producer]
+//   [Section: StringTable]      → shared identifier pool
+//   [Section: DialectRegistry]  → dialect name + version
+//   [Section: AttrTypePool]     → lazy-loadable via offsets
+//   [Section: IR]               → op trees with encodingMask
+
+// Convert between textual and bytecode:
+mlir-opt input.mlir -emit-bytecode -o output.mlirbc
+mlir-opt output.mlirbc  // reads back, prints textual</pre>
+<p>Compatibility is promised when dialect definitions remain unchanged; <code>BytecodeDialectInterface</code> enables custom attr/type encodings and <code>upgradeFromVersion</code> migrations for dialect evolution.</p>`,
+      related: ["Dialect", "Operation", "Attribute", "Interface", "Region"],
+      usedIn: ["mlir", "compiler-ai-infra"],
+      sources: [
+        { label: "MLIR Bytecode Format", url: "https://mlir.llvm.org/docs/BytecodeFormat/" }
       ]
     }
   }
