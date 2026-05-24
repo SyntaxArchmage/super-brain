@@ -4,6 +4,41 @@
   const rail = document.getElementById("concept-rail");
 
   let currentPage = "index";
+  let lang = localStorage.getItem("sb-lang") || "en";
+
+  // Translation helper — returns CN override if available, otherwise EN original
+  function t(section, id, field) {
+    if (lang === "cn" && typeof WIKI_CN !== "undefined") {
+      const cnSection = WIKI_CN[section];
+      if (cnSection && cnSection[id] && cnSection[id][field] !== undefined) {
+        return cnSection[id][field];
+      }
+    }
+    return WIKI[section]?.[id]?.[field];
+  }
+
+  function tTaxonomy(domainId, childId) {
+    if (lang === "cn" && typeof WIKI_CN !== "undefined" && WIKI_CN.taxonomy) {
+      const d = WIKI_CN.taxonomy.find(x => x.id === domainId);
+      if (d) {
+        if (!childId) return d.label;
+        const c = d.children?.find(x => x.id === childId);
+        if (c) return c.label;
+      }
+    }
+    const d = WIKI.taxonomy.find(x => x.id === domainId);
+    if (!d) return "";
+    if (!childId) return d.label;
+    return d.children?.find(x => x.id === childId)?.label || "";
+  }
+
+  function setLang(newLang) {
+    lang = newLang;
+    localStorage.setItem("sb-lang", lang);
+    renderNav();
+    renderPage();
+    renderRail();
+  }
 
   function navigate(pageId) {
     currentPage = pageId;
@@ -31,20 +66,24 @@
         <div class="nav-brand-icon">SB</div>
         <div class="nav-brand-text">Super Brain</div>
       </div>
-      <input type="search" class="nav-search" placeholder="Search pages..." id="nav-search-input" />
-      <div class="nav-section-label">Knowledge Domains</div>
+      <div class="nav-lang-toggle">
+        <button class="lang-btn${lang === 'en' ? ' active' : ''}" data-lang="en">EN</button>
+        <button class="lang-btn${lang === 'cn' ? ' active' : ''}" data-lang="cn">中文</button>
+      </div>
+      <input type="search" class="nav-search" placeholder="${lang === 'cn' ? '搜索页面...' : 'Search pages...'}" id="nav-search-input" />
+      <div class="nav-section-label">${lang === 'cn' ? '知识领域' : 'Knowledge Domains'}</div>
       <ul class="nav-tree">`;
 
     for (const domain of WIKI.taxonomy) {
       const isExpanded = expanded[domain.id];
       html += `<li>`;
       html += `<div class="nav-domain${isExpanded ? " expanded" : ""}" data-domain="${domain.id}">`;
-      html += `<span class="chevron">▸</span>${domain.label}`;
+      html += `<span class="chevron">▸</span>${tTaxonomy(domain.id)}`;
       html += `</div>`;
       html += `<ul class="nav-children${isExpanded ? " open" : ""}">`;
       for (const child of domain.children) {
         const active = child.id === currentPage ? " active" : "";
-        html += `<li><a class="nav-page${active}" data-page="${child.id}">${child.label}</a></li>`;
+        html += `<li><a class="nav-page${active}" data-page="${child.id}">${tTaxonomy(domain.id, child.id)}</a></li>`;
       }
       html += `</ul></li>`;
     }
@@ -52,6 +91,9 @@
     nav.innerHTML = html;
 
     document.getElementById("nav-home").addEventListener("click", () => navigate("index"));
+    nav.querySelectorAll(".lang-btn").forEach((btn) => {
+      btn.addEventListener("click", () => setLang(btn.dataset.lang));
+    });
     nav.querySelectorAll(".nav-domain").forEach((el) => {
       el.addEventListener("click", () => {
         el.classList.toggle("expanded");
@@ -92,22 +134,26 @@
   }
 
   function renderIndex(page) {
+    const title = t("pages", "index", "title") || page.title;
+    const subtitle = t("pages", "index", "subtitle") || page.subtitle;
     let html = `<div class="index-hero">`;
-    html += `<h1 class="article-title">${page.title}</h1>`;
-    html += `<p class="article-subtitle">${page.subtitle}</p>`;
+    html += `<h1 class="article-title">${title}</h1>`;
+    html += `<p class="article-subtitle">${subtitle}</p>`;
     html += `</div>`;
 
     for (const domain of WIKI.taxonomy) {
       const domainPages = domain.children.filter((c) => WIKI.pages[c.id]);
       if (domainPages.length === 0) continue;
 
-      html += `<div class="index-section-label">${domain.label}</div>`;
+      html += `<div class="index-section-label">${tTaxonomy(domain.id)}</div>`;
       html += `<div class="index-grid">`;
       for (const child of domainPages) {
         const p = WIKI.pages[child.id];
+        const pTitle = t("pages", child.id, "title") || p.title;
+        const pSubtitle = t("pages", child.id, "subtitle") || p.subtitle;
         html += `<div class="index-card" data-page="${child.id}">`;
-        html += `<div class="index-card-title">${p.title}</div>`;
-        html += `<div class="index-card-desc">${p.subtitle}</div>`;
+        html += `<div class="index-card-title">${pTitle}</div>`;
+        html += `<div class="index-card-desc">${pSubtitle}</div>`;
         html += `</div>`;
       }
       html += `</div>`;
@@ -120,18 +166,22 @@
   }
 
   function renderArticle(page) {
+    const pageId = currentPage;
+    const title = t("pages", pageId, "title") || page.title;
+    const subtitle = t("pages", pageId, "subtitle") || page.subtitle;
+    const body = t("pages", pageId, "body") || page.body;
     let html = "";
 
     if (page.domain) {
       html += `<div class="article-breadcrumb">`;
       html += `<span class="bc-domain">${page.domain}</span>`;
       html += `<span class="bc-sep">/</span>`;
-      html += `<span class="bc-current">${page.title}</span>`;
+      html += `<span class="bc-current">${title}</span>`;
       html += `</div>`;
     }
 
-    html += `<h1 class="article-title">${page.title}</h1>`;
-    html += `<p class="article-subtitle">${page.subtitle}</p>`;
+    html += `<h1 class="article-title">${title}</h1>`;
+    html += `<p class="article-subtitle">${subtitle}</p>`;
 
     if (page.meta) {
       html += `<div class="article-meta">`;
@@ -143,7 +193,7 @@
       html += `</div>`;
     }
 
-    html += `<div class="article-body">${page.body}</div>`;
+    html += `<div class="article-body">${body}</div>`;
 
     // Outgoing contributions
     if (page.contributions && page.contributions.length > 0) {
@@ -196,27 +246,32 @@
 
     if (!page || page.type === "index") {
       rail.innerHTML = `
-        <div class="rail-header">Concepts</div>
-        <div class="rail-empty">Navigate to an article to see<br/>its concept layer here.</div>`;
+        <div class="rail-header">${lang === 'cn' ? '概念' : 'Concepts'}</div>
+        <div class="rail-empty">${lang === 'cn' ? '打开一篇文章以查看<br/>其概念层。' : 'Navigate to an article to see<br/>its concept layer here.'}</div>`;
       return;
     }
 
     if (!page.concepts || page.concepts.length === 0) {
       rail.innerHTML = `
-        <div class="rail-header">Concepts</div>
-        <div class="rail-empty">No concepts defined for this article yet.</div>`;
+        <div class="rail-header">${lang === 'cn' ? '概念' : 'Concepts'}</div>
+        <div class="rail-empty">${lang === 'cn' ? '本文章尚未定义概念。' : 'No concepts defined for this article yet.'}</div>`;
       return;
     }
 
-    let html = `<div class="rail-header">Concept Layer &mdash; ${page.title}</div>`;
+    const pageTitle = t("pages", currentPage, "title") || page.title;
+    let html = `<div class="rail-header">${lang === 'cn' ? '概念层' : 'Concept Layer'} &mdash; ${pageTitle}</div>`;
 
     for (const c of page.concepts) {
+      const cId = c.name.toLowerCase();
+      const cName = t("concepts", cId, "name") || t("concepts", cId.replace(/\s+/g, "-"), "name") || c.name;
+      const cRole = t("concepts", cId, "role") || t("concepts", cId.replace(/\s+/g, "-"), "role") || c.role;
+      const cSummary = t("concepts", cId, "summary") || t("concepts", cId.replace(/\s+/g, "-"), "summary") || c.summary;
       html += `<div class="concept-card" data-concept="${c.name.toLowerCase()}">`;
       html += `<div class="concept-card-header">`;
-      html += `<span class="concept-name">${c.name}</span>`;
-      html += `<span class="concept-role">${c.role}</span>`;
+      html += `<span class="concept-name">${cName}</span>`;
+      html += `<span class="concept-role">${cRole}</span>`;
       html += `</div>`;
-      html += `<div class="concept-summary">${c.summary}</div>`;
+      html += `<div class="concept-summary">${cSummary}</div>`;
       html += `</div>`;
     }
 
@@ -253,37 +308,48 @@
     closeExpansions();
     const savedScroll = window.scrollY;
 
+    const cId = concept.name.toLowerCase();
+    const cIdDash = cId.replace(/\s+/g, "-");
+
     // Look up rich concept data
     const richConcept = WIKI.concepts
-      ? WIKI.concepts[concept.name.toLowerCase()] || WIKI.concepts[concept.name.toLowerCase().replace(/\s+/g, "-")]
+      ? WIKI.concepts[cId] || WIKI.concepts[cIdDash]
       : null;
+
+    const cName = t("concepts", cId, "name") || t("concepts", cIdDash, "name") || concept.name;
+    const cRole = t("concepts", cId, "role") || t("concepts", cIdDash, "role") || concept.role;
 
     let bodyHTML = "";
     if (richConcept) {
-      bodyHTML += `<p class="cfr-definition">${richConcept.definition}</p>`;
+      const def = t("concepts", cId, "definition") || t("concepts", cIdDash, "definition") || richConcept.definition;
+      const examples = t("concepts", cId, "examples") || t("concepts", cIdDash, "examples") || richConcept.examples;
+      bodyHTML += `<p class="cfr-definition">${def}</p>`;
 
-      if (richConcept.examples) {
-        bodyHTML += `<hr class="cfr-divider"><h3>Examples</h3>`;
-        bodyHTML += `<div class="cfr-examples">${richConcept.examples}</div>`;
+      if (examples) {
+        bodyHTML += `<hr class="cfr-divider"><h3>${lang === 'cn' ? '示例' : 'Examples'}</h3>`;
+        bodyHTML += `<div class="cfr-examples">${examples}</div>`;
       }
 
       if (richConcept.related && richConcept.related.length > 0) {
-        bodyHTML += `<hr class="cfr-divider"><h3>Related concepts</h3>`;
+        bodyHTML += `<hr class="cfr-divider"><h3>${lang === 'cn' ? '相关概念' : 'Related concepts'}</h3>`;
         bodyHTML += `<p>${richConcept.related.map((r) => `<span class="cfr-related-tag">${r}</span>`).join(" ")}</p>`;
       }
 
       if (richConcept.usedIn && richConcept.usedIn.length > 0) {
-        bodyHTML += `<hr class="cfr-divider"><h3>Appears in</h3>`;
+        bodyHTML += `<hr class="cfr-divider"><h3>${lang === 'cn' ? '出现在' : 'Appears in'}</h3>`;
         bodyHTML += `<ul>`;
         for (const pid of richConcept.usedIn) {
           const page = WIKI.pages[pid];
-          if (page) bodyHTML += `<li><a class="cfr-page-link" data-page="${pid}">${page.title}</a></li>`;
+          if (page) {
+            const pTitle = t("pages", pid, "title") || page.title;
+            bodyHTML += `<li><a class="cfr-page-link" data-page="${pid}">${pTitle}</a></li>`;
+          }
         }
         bodyHTML += `</ul>`;
       }
 
       if (richConcept.sources && richConcept.sources.length > 0) {
-        bodyHTML += `<hr class="cfr-divider"><h3>Sources</h3>`;
+        bodyHTML += `<hr class="cfr-divider"><h3>${lang === 'cn' ? '来源' : 'Sources'}</h3>`;
         bodyHTML += `<ul class="cfr-sources">`;
         for (const s of richConcept.sources) {
           bodyHTML += `<li><a href="${s.url}" target="_blank" rel="noopener">${s.label}</a></li>`;
@@ -291,16 +357,17 @@
         bodyHTML += `</ul>`;
       }
     } else {
-      bodyHTML += `<p class="cfr-definition">${concept.summary}</p>`;
+      const summary = t("concepts", cId, "summary") || t("concepts", cIdDash, "summary") || concept.summary;
+      bodyHTML += `<p class="cfr-definition">${summary}</p>`;
       bodyHTML += `<hr class="cfr-divider">`;
-      bodyHTML += `<p style="color:var(--c-text-tertiary);font-style:italic;">Detailed concept content not yet available. This concept will be expanded as the knowledge base grows.</p>`;
+      bodyHTML += `<p style="color:var(--c-text-tertiary);font-style:italic;">${lang === 'cn' ? '详细概念内容尚未可用。随着知识库的扩展，此概念将被丰富。' : 'Detailed concept content not yet available. This concept will be expanded as the knowledge base grows.'}</p>`;
     }
 
     main.innerHTML = `
       <div class="concept-full-replace">
-        <div class="cfr-back" id="cfr-back">← Back to article</div>
-        <div class="cfr-name">${concept.name}</div>
-        <div class="cfr-role">${concept.role}</div>
+        <div class="cfr-back" id="cfr-back">${lang === 'cn' ? '← 返回文章' : '← Back to article'}</div>
+        <div class="cfr-name">${cName}</div>
+        <div class="cfr-role">${cRole}</div>
         <div class="cfr-body">${bodyHTML}</div>
       </div>
     `;

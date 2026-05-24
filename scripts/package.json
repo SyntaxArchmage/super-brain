@@ -1,0 +1,10 @@
+{
+  "name": "super-brain-translate",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "translate": "node translate.js",
+    "translate:dry": "node translate.js --dry-run"
+  }
+}

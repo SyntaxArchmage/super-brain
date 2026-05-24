@@ -1,0 +1,41 @@
+name: Auto-translate to Chinese
+
+on:
+  push:
+    branches: [main]
+    paths: ['site/data.js']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  translate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Run translation
+        env:
+          TRANSLATE_API_KEY: ${{ secrets.TRANSLATE_API_KEY }}
+          TRANSLATE_MODEL: ${{ vars.TRANSLATE_MODEL || 'gpt-4o-mini' }}
+          TRANSLATE_BASE_URL: ${{ vars.TRANSLATE_BASE_URL || '' }}
+        run: node scripts/translate.js
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add site/data-cn.js scripts/.translate-hashes.json
+          if git diff --cached --quiet; then
+            echo "No translation changes to commit."
+          else
+            git commit -m "chore: auto-translate data-cn.js"
+            git push
+          fi
