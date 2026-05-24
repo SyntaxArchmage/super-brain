@@ -4,7 +4,6 @@
   const rail = document.getElementById("concept-rail");
 
   let currentPage = "index";
-  let expandMode = "float"; // "float" or "read"
 
   function navigate(pageId) {
     currentPage = pageId;
@@ -210,11 +209,6 @@
     }
 
     let html = `<div class="rail-header">Concept Layer &mdash; ${page.title}</div>`;
-    html += `<div class="rail-mode-toggle">`;
-    html += `<button class="rail-mode-btn${expandMode === 'float' ? ' active' : ''}" data-mode="float">Float</button>`;
-    html += `<button class="rail-mode-btn${expandMode === 'read' ? ' active' : ''}" data-mode="read">Modal</button>`;
-    html += `<button class="rail-mode-btn${expandMode === 'full' ? ' active' : ''}" data-mode="full">Replace</button>`;
-    html += `</div>`;
 
     for (const c of page.concepts) {
       html += `<div class="concept-card" data-concept="${c.name.toLowerCase()}">`;
@@ -237,101 +231,22 @@
 
     rail.innerHTML = html;
 
-    // Mode toggle buttons
-    rail.querySelectorAll(".rail-mode-btn").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        expandMode = btn.dataset.mode;
-        rail.querySelectorAll(".rail-mode-btn").forEach((b) => b.classList.remove("active"));
-        btn.classList.add("active");
-      });
-    });
-
-    // Concept card click → expand
+    // Concept card click → expand in Replace mode
     rail.querySelectorAll(".concept-card").forEach((card) => {
       card.style.cursor = "pointer";
       card.addEventListener("click", () => {
         const name = card.dataset.concept;
         const concept = page.concepts.find((c) => c.name.toLowerCase() === name);
-        if (concept) expandConcept(concept, card);
+        if (concept) showFullReplace(concept);
       });
     });
 
     highlightKeywords(page.concepts);
   }
 
-  function expandConcept(concept, anchorEl) {
-    if (expandMode === "float") {
-      showFloatPanel(concept, anchorEl);
-    } else if (expandMode === "read") {
-      showReadingMode(concept);
-    } else {
-      showFullReplace(concept);
-    }
-  }
-
-  function showFloatPanel(concept, anchorEl) {
-    closeExpansions();
-    const rect = anchorEl.getBoundingClientRect();
-    const panel = document.createElement("div");
-    panel.className = "concept-float-panel";
-    panel.style.top = `${Math.min(rect.top, window.innerHeight - 440)}px`;
-    panel.style.right = `${window.innerWidth - rect.left + 12}px`;
-
-    panel.innerHTML = `
-      <button class="cfp-close">✕</button>
-      <div class="cfp-name">${concept.name}</div>
-      <div class="cfp-role">${concept.role}</div>
-      <div class="cfp-summary">${concept.summary}</div>
-      <div class="cfp-section-title">Context</div>
-      <p style="font-size:0.8125rem;color:var(--c-text-secondary);line-height:1.5;">
-        This concept appears in the current article. Click keywords in the article body to see how it relates to the surrounding discussion.
-      </p>
-    `;
-
-    document.body.appendChild(panel);
-    panel.querySelector(".cfp-close").addEventListener("click", () => panel.remove());
-    document.addEventListener("keydown", function esc(e) {
-      if (e.key === "Escape") { panel.remove(); document.removeEventListener("keydown", esc); }
-    });
-  }
-
-  function showReadingMode(concept) {
-    closeExpansions();
-    const overlay = document.createElement("div");
-    overlay.className = "concept-reading-overlay";
-
-    overlay.innerHTML = `
-      <div class="concept-reading-card">
-        <button class="crc-close">✕</button>
-        <div class="crc-name">${concept.name}</div>
-        <div class="crc-role">${concept.role}</div>
-        <div class="crc-summary">${concept.summary}</div>
-        <hr class="crc-divider">
-        <div class="crc-section-title">About this concept</div>
-        <div class="crc-meta">
-          <p>This is a ${concept.role.toLowerCase()} concept in the current knowledge article. In the full knowledge base, concept pages will contain: canonical definitions, notation, related concepts, usage across articles, provenance, and terminology history.</p>
-        </div>
-        <hr class="crc-divider">
-        <div class="crc-section-title">Appears in</div>
-        <div class="crc-meta"><p>Current article (click keywords to trace usage)</p></div>
-      </div>
-    `;
-
-    document.body.appendChild(overlay);
-    overlay.addEventListener("click", (e) => { if (e.target === overlay) overlay.remove(); });
-    overlay.querySelector(".crc-close").addEventListener("click", () => overlay.remove());
-    document.addEventListener("keydown", function esc(e) {
-      if (e.key === "Escape") { overlay.remove(); document.removeEventListener("keydown", esc); }
-    });
-  }
-
   function closeExpansions() {
-    document.querySelectorAll(".concept-float-panel, .concept-reading-overlay").forEach((el) => el.remove());
-    // Restore article if it was replaced
     const placeholder = main.querySelector(".concept-full-replace");
-    if (placeholder) {
-      navigate(currentPage);
-    }
+    if (placeholder) navigate(currentPage);
   }
 
   function showFullReplace(concept) {
