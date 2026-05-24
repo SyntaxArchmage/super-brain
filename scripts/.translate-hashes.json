@@ -169,5 +169,15 @@
   "concepts.symbol-table.role": "0e7278cda02a9c0446dcc75a4df34eb2",
   "concepts.symbol-table.summary": "7a06af2fdc8e01c2fc9d48dd4b381cb3",
   "concepts.symbol-table.definition": "82d13ff7e3b180d796cf2e5ff7a1a2aa",
-  "concepts.symbol-table.examples": "2b546daa541f1be595b7c1edfce3dc48"
+  "concepts.symbol-table.examples": "2b546daa541f1be595b7c1edfce3dc48",
+  "concepts.pdll.name": "db7b25f33b15fb528a0717ea1189fb31",
+  "concepts.pdll.role": "4994a8ffeba4ac3140beb89e8d41f174",
+  "concepts.pdll.summary": "6fe083cdc762324a1bfdbc7cba1c0609",
+  "concepts.pdll.definition": "5146886c85f8d2aa0e00029acd0bd577",
+  "concepts.pdll.examples": "dba766347f1a7793830f2a209940d78e",
+  "concepts.linalg.name": "8bcc8474e70680a4baee815691f615e8",
+  "concepts.linalg.role": "888845839aa33917fa9289dd8ebf5934",
+  "concepts.linalg.summary": "6f63af5cd1d2bdc9fc603c5b9cfcf69c",
+  "concepts.linalg.definition": "c4b47b333085dffb73304c96b19a0eaa",
+  "concepts.linalg.examples": "2b7f81cbdd9cbc9502d121c54f7dde14"
 }

@@ -315,6 +315,20 @@ const WIKI_CN = {
       "summary": "通过唯一性强制、查找和可见性控制来保存命名符号的操作。启用线程安全引用，无需 SSA 使用列表。",
       "definition": "SymbolTable 是一个包含命名符号定义的操作（用 OpTrait::SymbolTable 标记）。符号通过名称 (SymbolRefAttr) 而不是 SSA 值引用，从而实现线程安全的并行编译 - 引用不会创建阻止并发修改的使用列表边缘。符号具有控制引用范围的可见性（公共/私有/嵌套）。双模型（全局名称的符号，本地数据的 SSA）是 MLIR 可以并行运行函数级传递的原因。",
       "examples": "<pre>// module是一个包含函数符号的SymbolTable\n模块{\n  // @matmul 是一个符号（默认为公共）\n  func.func @matmul(%A: memref<8x8xf32>, %B: memref<8x8xf32>) { ... }\n\n  // @helper 是私有的（仅在此模块内可见）\n  func.func private @helper(%x: i32) -> i32 { ... }\n\n  // 通过SymbolRefAttr引用符号：\n  func.func @caller() {\n    %r = call @matmul(...) : ... // ← 符号引用\n    // 嵌套：@outer_module::@inner_func\n  }\n}</前>\n<p>符号没有 SSA 结果——它们只是被命名，而不是被赋值。当需要名称和地址时，方言会提供具体化器（例如 <code>llvm.mlir.addressof</code>）。</p>"
+    },
+    "pdll": {
+      "name": "聚动态链接库",
+      "role": "语言",
+      "summary": "用于 MLIR 重写的声明性模式语言 — 使用 ODS 感知类型来匹配/重写部分。 DRR 的后继者，编译为 C++ 或 JIT 模式。",
+      "definition": "PDLL 是一种用于以声明方式编写 MLIR 重写模式的专用语言。它通过显式变量绑定将匹配（查找什么）与重写（生成什么）分开。与手写的 C++ 模式不同，PDLL 具有 ODS 感知能力（可以引用命名结果、.td 文件中的类型），并通过 PDL IR 编译为 AOT C++ 或 JIT 执行的模式。 DRR（其前身）使用 TableGen DAG 语法，但受到区域、可变操作和多操作重写的限制。",
+      "examples": "<pre>// PDLL 模式：折叠 add(x, 0) → x\n模式 AddZero 与 Benefit(10) {\n  let root = op<arith.addi>(lhs: 值, rhs: 值);\n  让零 = op<arith.constant> {value = attr<\"0 : i32\">};\n  // 约束：rhs 必须是零常数\n  用 { 重写 root\n    将 root 替换为 lhs；\n  };\n}\n\n// DRR（前身，TableGen 语法）：\ndef : 帕特<\n  (AddIOp $lhs, (ConstantOp ConstantAttr<I32Attr, \"0\">)),\n  (replaceWithValue $lhs)\n>;</前>\n<p>与 C++ 的主要区别：模式是数据（可分析、可组合、可 JIT）而不是代码。该框架可以同时优化多个 PDLL 模式的模式匹配顺序。</p>"
+    },
+    "linalg": {
+      "name": "利纳尔格",
+      "role": "方言",
+      "summary": "结构化计算方言：操作将循环嵌套语义作为元数据，从而无需多面体分析即可实现构造正确的平铺/融合。",
+      "definition": "Linalg 方言表示结构化计算（matmul、conv、通用张量运算），其中循环结构和数据访问模式以运算的语义进行编码，而不是通过分析来恢复。这种“语义即元数据”设计意味着平铺、融合和矢量化始终是合法的转换（无需依赖分析）。 Linalg 使用渐进式降低：平铺的 linalg.matmul 仍然是 linalg.matmul，保留高级意图，直到最终降低到循环。",
+      "examples": "<pre>// 命名 op（携带 matmul 语义）：\n%C = linalg.matmul ins(%A, %B : 张量<8x8xf32>, 张量<8x8xf32>)\n                   outs(%C_init : 张量<8x8xf32>) -> 张量<8x8xf32>\n\n// 平铺之后：平铺上仍然有 linalg.matmul\nscf.for %i = ... {\n  scf.for %j = ... {\n    %tile_A = 张量.extract_slice %A[%i, 0][4, 8][1, 1]\n    %tile_B = 张量.extract_slice %B[0, %j][8, 4][1, 1]\n    %tile_C = linalg.matmul ins(%tile_A, %tile_B : ...)\n                            outs(...) -> 张量<4x4xf32>\n  }\n}\n\n// 通用形式（indexing_maps 中明确的循环结构）：\nlinalg.generic {\n  indexing_maps = [affine_map<(m,n,k) -> (m,k)>, // A\n                   affine_map<(m,n,k) -> (k,n)>, // B\n                   affine_map<(m,n,k) -> (m,n)>], // C\n  iterator_types = [\"并行\",\"并行\",\"缩减\"]\n} ins(%A, %B) outs(%C) { ... }</pre>\n<p>三种可互换的形式：命名（matmul）、类别（收缩）、通用。管道选择在每个阶段使匹配/转换最简单的那个。</p>"
     }
   }
 };
