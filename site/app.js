@@ -338,27 +338,55 @@
     closeExpansions();
     const savedScroll = window.scrollY;
 
+    // Look up rich concept data
+    const richConcept = WIKI.concepts
+      ? WIKI.concepts[concept.name.toLowerCase()] || WIKI.concepts[concept.name.toLowerCase().replace(/\s+/g, "-")]
+      : null;
+
+    let bodyHTML = "";
+    if (richConcept) {
+      bodyHTML += `<p class="cfr-definition">${richConcept.definition}</p>`;
+
+      if (richConcept.examples) {
+        bodyHTML += `<hr class="cfr-divider"><h3>Examples</h3>`;
+        bodyHTML += `<div class="cfr-examples">${richConcept.examples}</div>`;
+      }
+
+      if (richConcept.related && richConcept.related.length > 0) {
+        bodyHTML += `<hr class="cfr-divider"><h3>Related concepts</h3>`;
+        bodyHTML += `<p>${richConcept.related.map((r) => `<span class="cfr-related-tag">${r}</span>`).join(" ")}</p>`;
+      }
+
+      if (richConcept.usedIn && richConcept.usedIn.length > 0) {
+        bodyHTML += `<hr class="cfr-divider"><h3>Appears in</h3>`;
+        bodyHTML += `<ul>`;
+        for (const pid of richConcept.usedIn) {
+          const page = WIKI.pages[pid];
+          if (page) bodyHTML += `<li><a class="cfr-page-link" data-page="${pid}">${page.title}</a></li>`;
+        }
+        bodyHTML += `</ul>`;
+      }
+
+      if (richConcept.sources && richConcept.sources.length > 0) {
+        bodyHTML += `<hr class="cfr-divider"><h3>Sources</h3>`;
+        bodyHTML += `<ul class="cfr-sources">`;
+        for (const s of richConcept.sources) {
+          bodyHTML += `<li><a href="${s.url}" target="_blank" rel="noopener">${s.label}</a></li>`;
+        }
+        bodyHTML += `</ul>`;
+      }
+    } else {
+      bodyHTML += `<p class="cfr-definition">${concept.summary}</p>`;
+      bodyHTML += `<hr class="cfr-divider">`;
+      bodyHTML += `<p style="color:var(--c-text-tertiary);font-style:italic;">Detailed concept content not yet available. This concept will be expanded as the knowledge base grows.</p>`;
+    }
+
     main.innerHTML = `
       <div class="concept-full-replace">
         <div class="cfr-back" id="cfr-back">← Back to article</div>
         <div class="cfr-name">${concept.name}</div>
         <div class="cfr-role">${concept.role}</div>
-        <div class="cfr-body">
-          <p class="cfr-summary">${concept.summary}</p>
-          <hr class="cfr-divider">
-          <h3>About this concept</h3>
-          <p>This is a <strong>${concept.role.toLowerCase()}</strong> concept in the current knowledge article. In the full knowledge base, concept pages will contain:</p>
-          <ul>
-            <li>Canonical definition and one-sentence summary</li>
-            <li>Notation and aliases</li>
-            <li>Related concepts (parent, siblings, competing formulations)</li>
-            <li>Usage across all articles in the knowledge base</li>
-            <li>Source provenance and terminology history</li>
-          </ul>
-          <hr class="cfr-divider">
-          <h3>Appears in</h3>
-          <p>Current article — <em>${WIKI.pages[currentPage].title}</em></p>
-        </div>
+        <div class="cfr-body">${bodyHTML}</div>
       </div>
     `;
 
@@ -373,6 +401,13 @@
     }
 
     main.querySelector("#cfr-back").addEventListener("click", goBack);
+    main.querySelectorAll(".cfr-page-link").forEach((link) => {
+      link.addEventListener("click", (e) => {
+        e.preventDefault();
+        main.style.background = "";
+        navigate(link.dataset.page);
+      });
+    });
     document.addEventListener("keydown", function esc(e) {
       if (e.key === "Escape") {
         goBack();

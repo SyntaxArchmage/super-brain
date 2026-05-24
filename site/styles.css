@@ -997,6 +997,77 @@ body {
   margin-bottom: var(--space-xs);
 }
 
+.concept-full-replace .cfr-definition {
+  font-size: 1.0625rem;
+  line-height: 1.75;
+  margin-bottom: var(--space-md);
+}
+
+.concept-full-replace .cfr-examples {
+  font-size: 0.9375rem;
+  line-height: 1.6;
+}
+
+.concept-full-replace .cfr-examples pre {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  background: var(--c-code-bg);
+  color: var(--c-code-text);
+  padding: var(--space-md) var(--space-lg);
+  border-radius: var(--radius-lg);
+  overflow-x: auto;
+  margin: var(--space-md) 0;
+  line-height: 1.6;
+}
+
+.concept-full-replace .cfr-examples p {
+  margin-top: var(--space-sm);
+  color: var(--c-text-secondary);
+}
+
+.concept-full-replace .cfr-related-tag {
+  display: inline-block;
+  padding: 2px 10px;
+  background: var(--c-accent-soft);
+  color: var(--c-accent);
+  border-radius: var(--radius);
+  font-family: var(--font-ui);
+  font-size: 0.75rem;
+  font-weight: 500;
+  margin-right: var(--space-xs);
+  margin-bottom: var(--space-xs);
+}
+
+.concept-full-replace .cfr-page-link {
+  color: var(--c-accent);
+  text-decoration: none;
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.concept-full-replace .cfr-page-link:hover {
+  text-decoration: underline;
+}
+
+.concept-full-replace .cfr-sources {
+  list-style: none;
+  padding: 0;
+}
+
+.concept-full-replace .cfr-sources li {
+  margin-bottom: var(--space-xs);
+}
+
+.concept-full-replace .cfr-sources a {
+  color: var(--c-accent);
+  text-decoration: none;
+  font-size: 0.875rem;
+}
+
+.concept-full-replace .cfr-sources a:hover {
+  text-decoration: underline;
+}
+
 .rail-section-divider {
   margin: var(--space-lg) 0 var(--space-sm);
   font-size: 0.625rem;

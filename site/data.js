@@ -787,5 +787,344 @@ Higher abstraction → more optimization opportunities, longer pipeline</pre>
       ],
       contributions: []
     }
+  },
+
+  concepts: {
+    operation: {
+      name: "Operation",
+      role: "Core entity",
+      summary: "Central MLIR abstraction. Owns operands, results, regions, attributes. Fully extensible — each dialect defines its own operations.",
+      definition: "An Operation is the atomic building block of MLIR. Unlike fixed-instruction IRs (LLVM has ~60 instructions), MLIR operations are fully extensible — any dialect can define new operations. Each operation can own operands (input values), results (output values), successors (branch targets), attributes (compile-time constants), properties (mutable metadata), and regions (nested IR).",
+      examples: `<pre>// A function operation (owns a region with blocks)
+func.func @matmul(%A: memref<16x16xf32>, %B: memref<16x16xf32>) {
+  // Arithmetic operation (produces a result value)
+  %c0 = arith.constant 0.0 : f32
+  // Linalg operation (owns a region defining the computation body)
+  linalg.matmul ins(%A, %B : memref<16x16xf32>, memref<16x16xf32>)
+               outs(%C : memref<16x16xf32>)
+  return
+}</pre>
+<p>Notice how <code>func.func</code> contains a region, <code>arith.constant</code> produces a value, and <code>linalg.matmul</code> carries complex structured attributes. All are "operations" — the abstraction unifies them.</p>`,
+      related: ["Value", "Region", "Block", "Dialect"],
+      usedIn: ["mlir", "ir-design", "compiler-ai-infra"],
+      sources: [
+        { label: "MLIR LangRef — Operations", url: "https://mlir.llvm.org/docs/LangRef/#operations" },
+        { label: "MLIR Glossary", url: "https://mlir.llvm.org/getting_started/Glossary/" }
+      ]
+    },
+    value: {
+      name: "Value",
+      role: "Core entity",
+      summary: "Typed def-use edge. Either an operation result or block argument. Has exactly one definition point but potentially many users.",
+      definition: "A Value in MLIR represents a typed runtime datum. Every value has exactly one point of definition (either as an operation result or a block argument) and zero or more uses (as operands to other operations). This single-definition property is the SSA invariant that makes dataflow analysis trivial.",
+      examples: `<pre>// %a is a block argument (defined by the block)
+^bb0(%a: i64, %cond: i1):
+  // %b is an operation result (defined by arith.addi)
+  %b = arith.addi %a, %a : i64
+  //     ↑ uses %a twice
+  // %b flows to the branch as a block argument
+  cf.br ^bb1(%b: i64)
+  //         ↑ %b is used here as a branch argument
+
+^bb1(%c: i64):  // %c receives the value passed by the branch
+  return %c : i64</pre>
+<p>Block arguments replace phi nodes entirely. Data flow at control-flow merge points is explicit in the CFG topology — there's no magic "phi instruction" that implicitly selects between predecessors.</p>`,
+      related: ["Operation", "Block", "SSA"],
+      usedIn: ["mlir", "ir-design"],
+      sources: [
+        { label: "MLIR LangRef — High-Level Structure", url: "https://mlir.llvm.org/docs/LangRef/#high-level-structure" },
+        { label: "IR Structure Tutorial — Def-Use", url: "https://mlir.llvm.org/docs/Tutorials/UnderstandingTheIRStructure/" }
+      ]
+    },
+    region: {
+      name: "Region",
+      role: "Structure",
+      summary: "Ordered blocks owned by an operation. Semantics (SSACFG or Graph) depend on the containing operation, not the region itself.",
+      definition: "A Region is an ordered list of Blocks owned by an Operation. Critically, a region has no independent semantics — its meaning is entirely determined by the containing operation. A region inside func.func behaves like an SSACFG (control flow is meaningful); a region inside a graph-rewriting operation may have no ordering requirement.",
+      examples: `<pre>// SSACFG region: order and control flow matter
+func.func @example() {
+  ^entry:      // ← Block 1 of the region
+    ...
+    cf.br ^body
+  ^body:       // ← Block 2
+    ...
+    cf.cond_br %c, ^then, ^exit
+  ^then:       // ← Block 3
+    ...
+  ^exit:       // ← Block 4
+    return
+}
+
+// Graph region: operations have no inherent order
+"test.graph_op"() ({
+  %a = "test.foo"() : () -> i32
+  %b = "test.bar"() : () -> i32
+  // %a and %b may execute in any order
+}) : () -> ()</pre>
+<p>The UI must show region kind because it changes whether ordering and control-flow arrows are semantically meaningful or merely cosmetic.</p>`,
+      related: ["Operation", "Block", "Dialect"],
+      usedIn: ["mlir", "ir-design"],
+      sources: [
+        { label: "MLIR LangRef — Regions", url: "https://mlir.llvm.org/docs/LangRef/#regions" }
+      ]
+    },
+    block: {
+      name: "Block",
+      role: "Structure",
+      summary: "Sequential operation list with typed block arguments. CFG terminators target blocks. Block arguments replace phi nodes.",
+      definition: "A Block is a sequential list of operations within a region. In SSACFG regions, blocks are like basic blocks in classical compilers — they have a single entry point and a terminator that transfers control to successor blocks. MLIR's key innovation is block arguments: typed parameters passed by branch instructions, eliminating the need for phi nodes.",
+      examples: `<pre>// Block arguments in action:
+^bb0(%x: i64, %flag: i1):
+  cf.cond_br %flag, ^bb1, ^bb2
+
+^bb1:
+  %a = arith.constant 42 : i64
+  cf.br ^merge(%a: i64)    // passes %a to ^merge
+
+^bb2:
+  %b = arith.constant 0 : i64
+  cf.br ^merge(%b: i64)    // passes %b to ^merge
+
+^merge(%result: i64):      // receives whichever was passed
+  return %result : i64</pre>
+<p>Compare with LLVM's phi: <code>%result = phi i64 [%a, %bb1], [%b, %bb2]</code>. Block arguments make the data flow through control-flow edges explicit and visible in the branch instruction itself.</p>`,
+      related: ["Region", "Value", "Operation"],
+      usedIn: ["mlir"],
+      sources: [
+        { label: "MLIR LangRef — Blocks", url: "https://mlir.llvm.org/docs/LangRef/#blocks" }
+      ]
+    },
+    dialect: {
+      name: "Dialect",
+      role: "Namespace",
+      summary: "Extension mechanism grouping operations, types, attributes under a namespace. Multiple dialects coexist; conversion between them is explicit.",
+      definition: "A Dialect is MLIR's solution to the extension problem: how do you add domain-specific operations without forking the compiler? Each dialect defines a namespace (e.g., 'arith', 'linalg', 'gpu') containing operations, types, and attributes. Multiple dialects coexist in one module — a function can contain operations from arith, scf, and linalg simultaneously.",
+      examples: `<pre>// Multiple dialects coexisting in one function:
+func.func @mixed_dialects(%input: tensor<8x8xf32>) -> tensor<8x8xf32> {
+  // 'arith' dialect — scalar arithmetic
+  %zero = arith.constant 0.0 : f32
+
+  // 'linalg' dialect — structured linear algebra
+  %filled = linalg.fill ins(%zero: f32) outs(%input: tensor<8x8xf32>)
+
+  // 'scf' dialect — structured control flow
+  %result = scf.for %i = %c0 to %c8 step %c1
+            iter_args(%acc = %filled) -> tensor<8x8xf32> {
+    ...
+    scf.yield %updated : tensor<8x8xf32>
+  }
+  return %result : tensor<8x8xf32>
+}</pre>
+<p>Key dialects: <code>func</code> (functions), <code>arith</code> (arithmetic), <code>cf</code> (control flow), <code>scf</code> (structured loops), <code>memref</code> (memory buffers), <code>tensor</code> (value-semantics tensors), <code>linalg</code> (linear algebra), <code>gpu</code> (GPU operations), <code>llvm</code> (LLVM IR lowering target).</p>`,
+      related: ["Operation", "Conversion", "Lowering"],
+      usedIn: ["mlir", "compiler-ai-infra", "lowering-pipelines"],
+      sources: [
+        { label: "MLIR Dialects Index", url: "https://mlir.llvm.org/docs/Dialects/" },
+        { label: "MLIR LangRef — Dialects", url: "https://mlir.llvm.org/docs/LangRef/#dialects" }
+      ]
+    },
+    symbol: {
+      name: "Symbol",
+      role: "Scope",
+      summary: "Named operation in a symbol table. Referenced via SymbolRefAttr for cross-scope access that SSA dominance cannot express.",
+      definition: "Symbols provide MLIR's mechanism for cross-scope references. While SSA values are only visible within their dominance scope, symbols are named operations that can be referenced from anywhere via SymbolRefAttr. Functions, globals, and module-level entities are typically symbols.",
+      examples: `<pre>// @matmul is a Symbol — referenced by name, not by SSA value
+module {
+  // Symbol definition: a named function
+  func.func @matmul(%A: memref<4x4xf32>, %B: memref<4x4xf32>) {
+    ...
+  }
+
+  func.func @caller() {
+    // Symbol reference: calling by name
+    func.call @matmul(%x, %y) : (memref<4x4xf32>, memref<4x4xf32>) -> ()
+    //        ^^^^^^^ This is a SymbolRefAttr, not an SSA operand
+
+    // Nested symbol reference:
+    func.call @library::@helper() : () -> ()
+    //        ^^^^^^^^^^^^^^^^^^^ nested: module "library", func "helper"
+  }
+}</pre>
+<p>Symbols exist because module-level entities need stable names that survive across compilation stages. You can't pass a "function pointer as SSA value" in MLIR's design — you reference functions by their symbol name.</p>`,
+      related: ["Operation", "Value"],
+      usedIn: ["mlir"],
+      sources: [
+        { label: "Symbols and Symbol Tables", url: "https://mlir.llvm.org/docs/SymbolsAndSymbolTables/" }
+      ]
+    },
+    pass: {
+      name: "Pass",
+      role: "Transformation",
+      summary: "Operation-scoped transformation. Nested pass managers mirror IR nesting. Must not mutate outside anchor scope.",
+      definition: "A Pass in MLIR is a transformation that operates on a specific operation type (its 'anchor'). Passes must not inspect or mutate anything outside the anchor operation's region tree. This scoping rule enables parallelism: passes on independent operations can run concurrently.",
+      examples: `<pre>// Pass pipeline structure (mirrors IR nesting):
+// mlir-opt input.mlir -pass-pipeline='
+//   builtin.module(
+//     func.func(
+//       canonicalize,    ← runs on each func.func
+//       cse              ← runs on each func.func
+//     ),
+//     inline,            ← runs on the module
+//     func.func(
+//       convert-linalg-to-loops  ← lowering pass
+//     )
+//   )'
+
+// The nested structure means:
+// 1. canonicalize + cse run inside each function
+// 2. inline runs at module level (can see all functions)
+// 3. linalg-to-loops runs inside each function after inlining</pre>
+<p>The pass manager exposes timing (<code>-mlir-timing</code>) and IR snapshots (<code>-mlir-print-ir-after-all</code>) — these are the natural data feeds for pipeline visualization.</p>`,
+      related: ["Operation", "Lowering", "Conversion"],
+      usedIn: ["mlir", "lowering-pipelines"],
+      sources: [
+        { label: "Pass Management", url: "https://mlir.llvm.org/docs/PassManagement/" }
+      ]
+    },
+    lowering: {
+      name: "Lowering",
+      role: "Transformation",
+      summary: "Progressive movement toward lower abstraction. Distinct from conversion (same level) and translation (leaving MLIR).",
+      definition: "Lowering is the progressive transformation of IR from higher to lower abstraction levels. It is distinct from conversion (rewriting between dialects at the same abstraction level) and translation (leaving MLIR entirely to emit LLVM IR, machine code, etc.).",
+      examples: `<pre>// Lowering chain from high-level to low-level:
+
+// Level 1: linalg (structured computation)
+linalg.matmul ins(%A, %B) outs(%C)
+
+// ↓ lower linalg to loops (scf dialect)
+// Level 2: scf (structured control flow)
+scf.for %i = 0 to N {
+  scf.for %j = 0 to N {
+    scf.for %k = 0 to N {
+      %a = memref.load %A[%i, %k]
+      %b = memref.load %B[%k, %j]
+      %c = arith.mulf %a, %b
+      ...
+    }
+  }
+}
+
+// ↓ lower scf to cf (unstructured control flow)
+// Level 3: cf (branch-based)
+^loop_header:
+  cf.cond_br %done, ^exit, ^body
+^body:
+  ...
+  cf.br ^loop_header
+
+// ↓ translate to LLVM IR (leaving MLIR)
+// Level 4: LLVM IR (external)
+define void @matmul(...) { ... }</pre>`,
+      related: ["Pass", "Conversion", "Dialect"],
+      usedIn: ["mlir", "lowering-pipelines", "compiler-ai-infra"],
+      sources: [
+        { label: "MLIR Glossary — Lowering", url: "https://mlir.llvm.org/getting_started/Glossary/" }
+      ]
+    },
+    "self-attention": {
+      name: "Self-attention",
+      role: "Mechanism",
+      summary: "Weighted aggregation over all sequence positions via learned query-key compatibility. O(n²) in sequence length.",
+      definition: "Self-attention computes, for each position in a sequence, a weighted sum over all other positions. The weights (attention scores) are determined by the compatibility between a 'query' vector at the current position and 'key' vectors at all other positions. This allows every token to directly attend to every other token regardless of distance.",
+      examples: `<pre>// Attention computation:
+// Q, K, V ∈ ℝ^(seq_len × d_model)
+
+Attention(Q, K, V) = softmax(QK^T / √d_k) · V
+
+// For a sequence of length n=4:
+//   Q·K^T produces a 4×4 attention matrix
+//   Each row sums to 1 after softmax
+//   Row i tells position i how much to attend to each other position
+
+// Multi-head: run h attention functions in parallel
+MultiHead(Q, K, V) = Concat(head_1, ..., head_h) · W_O
+  where head_i = Attention(Q·W_Q_i, K·W_K_i, V·W_V_i)</pre>
+<p>The O(n²) cost comes from the QK^T matrix multiplication — every query must dot-product with every key. For sequence length 128K, this means 16 billion attention scores per layer.</p>`,
+      related: ["KV cache", "Transformer"],
+      usedIn: ["transformer-arch", "serving-systems"],
+      sources: [
+        { label: "Attention Is All You Need (2017)", url: "https://arxiv.org/abs/1706.03762" }
+      ]
+    },
+    "kv cache": {
+      name: "KV cache",
+      role: "Optimization",
+      summary: "Cached key-value pairs for efficient autoregressive generation. Avoids recomputing attention history. Memory grows linearly with context length.",
+      definition: "During autoregressive generation, each new token needs to attend to all previous tokens. Without caching, this means recomputing all key-value projections for the entire history at each step (O(n²) total). The KV cache stores previously computed key and value tensors, so each new token only computes its own K/V and reuses the cached history.",
+      examples: `<pre>// Without KV cache (naive generation):
+// Step 1: compute attention over [t1]           → 1 KV pair
+// Step 2: compute attention over [t1, t2]       → 2 KV pairs (recomputed!)
+// Step 3: compute attention over [t1, t2, t3]   → 3 KV pairs (recomputed!)
+// Total KV computations: 1+2+3+...+n = O(n²)
+
+// With KV cache:
+// Step 1: compute K1,V1, cache them             → cache: [K1,V1]
+// Step 2: compute K2,V2, attend to cache+new    → cache: [K1,V1,K2,V2]
+// Step 3: compute K3,V3, attend to cache+new    → cache: [K1,V1,K2,V2,K3,V3]
+// Total KV computations: n (linear!)
+
+// Memory cost per layer:
+// 2 × seq_len × num_heads × head_dim × dtype_bytes
+// For Llama-70B, 128K context:
+//   2 × 131072 × 64 × 128 × 2 bytes = ~4 GB per layer
+//   × 80 layers = ~320 GB (!) for KV cache alone</pre>
+<p>This is why serving long-context models requires techniques like PagedAttention (non-contiguous allocation), GQA (shared KV heads), and KV cache quantization (FP8/INT4).</p>`,
+      related: ["Self-attention", "PagedAttention", "Continuous batching"],
+      usedIn: ["transformer-arch", "serving-systems"],
+      sources: [
+        { label: "Efficient Inference — KV Caching", url: "https://arxiv.org/abs/2211.05102" }
+      ]
+    },
+    ssa: {
+      name: "SSA",
+      role: "Form",
+      summary: "Single Static Assignment. Each value defined exactly once. Makes def-use analysis O(1) per edge.",
+      definition: "Single Static Assignment is an IR property where each variable (value) is assigned exactly once. This simplifies dataflow analysis dramatically: to find where a value is defined, just look at its unique definition point. No iteration to a fixed point is needed because reaching definitions are trivially resolved.",
+      examples: `<pre>// Non-SSA (traditional):
+x = 1
+x = x + 1    // Which 'x'? Need reaching-definition analysis
+y = x * 2    // Which definition of x reaches here?
+
+// SSA form:
+x1 = 1
+x2 = x1 + 1  // Unambiguous: uses x1, defines x2
+y1 = x2 * 2  // Unambiguous: uses x2
+
+// At control-flow merges, SSA needs a mechanism to select:
+// LLVM uses phi nodes:
+//   %x3 = phi [%x1, %bb1], [%x2, %bb2]
+// MLIR uses block arguments:
+//   ^merge(%x3: i32):  // receives from predecessor's branch</pre>
+<p>SSA converts the "which definition reaches this use?" question from an iterative O(n) analysis into a direct O(1) pointer follow. This is why virtually all modern compiler IRs use SSA form.</p>`,
+      related: ["Value", "Block", "Operation"],
+      usedIn: ["mlir", "ir-design"],
+      sources: [
+        { label: "SSA — Wikipedia", url: "https://en.wikipedia.org/wiki/Static_single-assignment_form" }
+      ]
+    },
+    locality: {
+      name: "Locality",
+      role: "Principle",
+      summary: "Temporal (reuse soon) and spatial (access nearby) patterns that determine cache efficiency.",
+      definition: "Locality is the principle that programs tend to access a small subset of their address space at any given time. Temporal locality means recently accessed data will likely be accessed again soon. Spatial locality means data near recently accessed data will likely be accessed next. These patterns are what caches exploit — without locality, caches would be useless.",
+      examples: `<pre>// Good temporal locality (reuses 'sum' every iteration):
+float sum = 0;
+for (int i = 0; i < N; i++)
+  sum += arr[i];  // 'sum' stays in register/L1
+
+// Good spatial locality (sequential access):
+for (int i = 0; i < N; i++)
+  arr[i] *= 2;  // Each access is +4 bytes from previous
+                 // Prefetcher detects stride, pre-fetches lines
+
+// BAD locality (random access):
+for (int i = 0; i < N; i++)
+  arr[random_indices[i]] *= 2;  // Cache miss nearly every access
+                                 // Defeats prefetcher</pre>
+<p>Loop tiling exploits both: process a small block that fits in cache (spatial), reuse it multiple times before eviction (temporal). This is why MLIR's affine dialect exists — to reason about and optimize these access patterns automatically.</p>`,
+      related: ["Cache line", "Memory Hierarchy"],
+      usedIn: ["memory-hierarchy"],
+      sources: []
+    }
   }
 };
