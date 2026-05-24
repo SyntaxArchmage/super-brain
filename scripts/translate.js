@@ -7,7 +7,7 @@
  *   node translate.js
  *   node translate.js --dry-run
  *
- * Zero API keys required. Uses Google Translate via @yxw007/translate.
+ * Zero API keys required. Uses Google's free translation endpoint directly.
  */
 
 import { createHash } from "node:crypto";
@@ -90,98 +90,93 @@ function findChangedFields(fields, hashes) {
 }
 
 /**
- * Strip HTML tags for translation, then restore them.
- * For fields containing HTML (body, examples), we translate text content only.
+ * Translate text using Google Translate's free endpoint.
+ * Splits long text into chunks to avoid URL length limits.
  */
-function stripHtmlForTranslation(html) {
-  const tokens = [];
-  let idx = 0;
-  const regex = /(<[^>]+>|<\/[^>]+>)/g;
-  let match;
-  let lastEnd = 0;
-
-  while ((match = regex.exec(html)) !== null) {
-    if (match.index > lastEnd) {
-      tokens.push({ type: "text", value: html.slice(lastEnd, match.index) });
-    }
-    tokens.push({ type: "tag", value: match[0] });
-    lastEnd = regex.lastIndex;
-  }
-  if (lastEnd < html.length) {
-    tokens.push({ type: "text", value: html.slice(lastEnd) });
-  }
-
-  return tokens;
-}
-
-async function translateText(text, translator) {
+async function googleTranslate(text, from = "en", to = "zh-CN") {
   if (!text.trim()) return text;
-  // Preserve leading/trailing whitespace
-  const leadingWs = text.match(/^(\s*)/)[0];
-  const trailingWs = text.match(/(\s*)$/)[0];
-  const trimmed = text.trim();
-  if (!trimmed) return text;
 
-  try {
-    const result = await translator.translate(trimmed, { from: "en", to: "zh" });
-    if (typeof result === "string") return leadingWs + result + trailingWs;
-    if (Array.isArray(result)) return leadingWs + result[0] + trailingWs;
-    return text;
-  } catch {
-    return text;
+  const MAX_CHUNK = 4500;
+  if (text.length <= MAX_CHUNK) {
+    return await googleTranslateChunk(text, from, to);
   }
-}
 
-async function translateHtml(html, translator) {
-  const tokens = stripHtmlForTranslation(html);
+  // Split on sentence boundaries or HTML tags for long texts
+  const chunks = splitIntoChunks(text, MAX_CHUNK);
   const results = [];
-
-  for (const token of tokens) {
-    if (token.type === "tag") {
-      results.push(token.value);
-    } else {
-      // Skip code content inside <pre> or <code>
-      const lastTag = results.join("").match(/<(pre|code)[^>]*>(?!.*<\/\1>)/is);
-      if (lastTag) {
-        results.push(token.value);
-      } else {
-        results.push(await translateText(token.value, translator));
-      }
-    }
+  for (const chunk of chunks) {
+    results.push(await googleTranslateChunk(chunk, from, to));
+    await sleep(300);
   }
-
   return results.join("");
 }
 
-async function translateField(field, translator) {
-  const isHtml = field.value.includes("<") && (
-    field.key.endsWith(".body") ||
-    field.key.endsWith(".examples") ||
-    field.key.endsWith(".definition")
-  );
+function splitIntoChunks(text, maxLen) {
+  const chunks = [];
+  let remaining = text;
 
-  if (isHtml) {
-    return await translateHtml(field.value, translator);
+  while (remaining.length > maxLen) {
+    let splitAt = remaining.lastIndexOf(">", maxLen);
+    if (splitAt === -1 || splitAt < maxLen * 0.3) {
+      splitAt = remaining.lastIndexOf(". ", maxLen);
+    }
+    if (splitAt === -1 || splitAt < maxLen * 0.3) {
+      splitAt = remaining.lastIndexOf(" ", maxLen);
+    }
+    if (splitAt === -1) splitAt = maxLen;
+    else splitAt += 1;
+
+    chunks.push(remaining.slice(0, splitAt));
+    remaining = remaining.slice(splitAt);
   }
-  return await translateText(field.value, translator);
+  if (remaining) chunks.push(remaining);
+  return chunks;
+}
+
+async function googleTranslateChunk(text, from, to) {
+  const url = "https://translate.googleapis.com/translate_a/single?" +
+    new URLSearchParams({
+      client: "gtx",
+      sl: from,
+      tl: to,
+      dt: "t",
+      q: text
+    }).toString();
+
+  const resp = await fetch(url, {
+    headers: { "User-Agent": "Mozilla/5.0" }
+  });
+
+  if (!resp.ok) {
+    console.warn(`    Google Translate returned ${resp.status}, keeping original`);
+    return text;
+  }
+
+  const data = await resp.json();
+  // Response format: [[["translated","original",...],...],...}
+  if (Array.isArray(data) && Array.isArray(data[0])) {
+    return data[0].map(segment => segment[0]).join("");
+  }
+  return text;
+}
+
+function sleep(ms) {
+  return new Promise(r => setTimeout(r, ms));
 }
 
 async function translateBatch(fields) {
-  const { translator, engines } = await import("@yxw007/translate");
-  translator.addEngine(engines.google);
-
   const results = [];
 
   for (let i = 0; i < fields.length; i++) {
     const f = fields[i];
     console.log(`  [${i + 1}/${fields.length}] ${f.key} (${f.value.length} chars)...`);
 
-    const translated = await translateField(f, translator);
+    const translated = await googleTranslate(f.value);
     results.push({ key: f.key, hash: f.hash, translated });
 
-    // Small delay to avoid rate limiting
+    // Rate limit: 500ms between requests
     if (i < fields.length - 1) {
-      await new Promise(r => setTimeout(r, 200));
+      await sleep(500);
     }
   }
 
