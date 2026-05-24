@@ -1442,6 +1442,66 @@ module {
       sources: [
         { label: "MLIR Symbols and Symbol Tables", url: "https://mlir.llvm.org/docs/SymbolsAndSymbolTables/" }
       ]
+    },
+    pdll: {
+      name: "PDLL",
+      role: "Language",
+      summary: "Declarative pattern language for MLIR rewrites — match/rewrite sections with ODS-aware typing. Successor to DRR, compiles to C++ or JIT patterns.",
+      definition: "PDLL is a dedicated language for writing MLIR rewrite patterns declaratively. It separates match (what to find) from rewrite (what to produce) with explicit variable binding. Unlike hand-written C++ patterns, PDLL is ODS-aware (can reference named results, types from .td files) and compiles through PDL IR to either AOT C++ or JIT-executed patterns. DRR (its predecessor) used TableGen DAG syntax but was limited with regions, variadic ops, and multi-op rewrites.",
+      examples: `<pre>// PDLL pattern: fold add(x, 0) → x
+Pattern AddZero with benefit(10) {
+  let root = op<arith.addi>(lhs: Value, rhs: Value);
+  let zero = op<arith.constant> {value = attr<"0 : i32">};
+  // Constraint: rhs must be the zero constant
+  rewrite root with {
+    replace root with lhs;
+  };
+}
+
+// DRR (predecessor, TableGen syntax):
+def : Pat<
+  (AddIOp $lhs, (ConstantOp ConstantAttr<I32Attr, "0">)),
+  (replaceWithValue $lhs)
+>;</pre>
+<p>Key difference from C++: patterns are data (analyzable, composable, JIT-able) rather than code. The framework can optimize pattern matching order across many PDLL patterns simultaneously.</p>`,
+      related: ["RewritePattern", "ODS", "Pass"],
+      usedIn: ["mlir", "ir-design"],
+      sources: [
+        { label: "MLIR PDLL Documentation", url: "https://mlir.llvm.org/docs/PDLL/" }
+      ]
+    },
+    linalg: {
+      name: "Linalg",
+      role: "Dialect",
+      summary: "Structured computation dialect: ops carry loop-nest semantics as metadata, enabling correct-by-construction tiling/fusion without polyhedral analysis.",
+      definition: "The Linalg dialect represents structured computations (matmul, conv, generic tensor ops) where the loop structure and data access patterns are encoded in the operation's semantics — not recovered by analysis. This 'semantics-as-metadata' design means tiling, fusion, and vectorization are always legal transformations (no dependence analysis needed). Linalg uses progressive lowering: a tiled linalg.matmul is still a linalg.matmul, preserving high-level intent until the final lowering to loops.",
+      examples: `<pre>// Named op (carries matmul semantics):
+%C = linalg.matmul ins(%A, %B : tensor<8x8xf32>, tensor<8x8xf32>)
+                   outs(%C_init : tensor<8x8xf32>) -> tensor<8x8xf32>
+
+// After tiling: STILL a linalg.matmul on a tile
+scf.for %i = ... {
+  scf.for %j = ... {
+    %tile_A = tensor.extract_slice %A[%i, 0][4, 8][1, 1]
+    %tile_B = tensor.extract_slice %B[0, %j][8, 4][1, 1]
+    %tile_C = linalg.matmul ins(%tile_A, %tile_B : ...)
+                            outs(...) -> tensor<4x4xf32>
+  }
+}
+
+// Generic form (loop structure explicit in indexing_maps):
+linalg.generic {
+  indexing_maps = [affine_map<(m,n,k) -> (m,k)>,   // A
+                   affine_map<(m,n,k) -> (k,n)>,   // B
+                   affine_map<(m,n,k) -> (m,n)>],  // C
+  iterator_types = ["parallel","parallel","reduction"]
+} ins(%A, %B) outs(%C) { ... }</pre>
+<p>Three interchangeable forms: named (matmul), category (contraction), generic. Pipelines choose whichever makes matching/transforms simplest at each stage.</p>`,
+      related: ["Bufferization", "Lowering", "Dialect"],
+      usedIn: ["mlir", "compiler-ai-infra", "lowering-pipelines"],
+      sources: [
+        { label: "Linalg Dialect Rationale", url: "https://mlir.llvm.org/docs/Rationale/RationaleLinalgDialect/" }
+      ]
     }
   }
 };
