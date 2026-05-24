@@ -960,8 +960,8 @@ module {
     pass: {
       name: "Pass",
       role: "Transformation",
-      summary: "Operation-scoped transformation. Nested pass managers mirror IR nesting. Must not mutate outside anchor scope.",
-      definition: "A Pass in MLIR is a transformation that operates on a specific operation type (its 'anchor'). Passes must not inspect or mutate anything outside the anchor operation's region tree. This scoping rule enables parallelism: passes on independent operations can run concurrently.",
+      summary: "Operation-scoped transformation step. Thread-safe, copy-constructible. Runs at specific nesting level. Forms pipelines via pass managers.",
+      definition: "A Pass is a unit of compilation work that operates on a specific operation type (its 'anchor'). Key invariants: (1) may only modify ops nested under the current operation; (2) must be copy-constructible with no cross-invocation state (enables parallel execution); (3) pipelines run operation-at-a-time, not pass-at-a-time — all passes run on func₁, then all on func₂. Passes declare dependent dialects (for thread-safe preloading), query analyses via getAnalysis<>, and signal failure to abort the pipeline.",
       examples: `<pre>// Pass pipeline structure (mirrors IR nesting):
 // mlir-opt input.mlir -pass-pipeline='
 //   builtin.module(
@@ -1266,6 +1266,86 @@ func.func @ssacfg() {
       usedIn: ["mlir", "lowering-pipelines"],
       sources: [
         { label: "MLIR LangRef — Control Flow", url: "https://mlir.llvm.org/docs/LangRef/#control-flow-and-ssacfg-regions" }
+      ]
+    },
+    "conversion-target": {
+      name: "ConversionTarget",
+      role: "Legality contract",
+      summary: "Formal specification of which operations/dialects are legal after a dialect conversion. The success criterion for lowering.",
+      definition: "A ConversionTarget declares the legality state of every operation in the conversion: Legal (always OK), Dynamically Legal (OK if callback passes), Illegal (must be rewritten), or Unknown. The conversion driver only succeeds when all output IR satisfies the target's legality constraints. This formalization enables partial lowering (leave unknowns), full lowering (everything must legalize), and analysis mode (dry-run without changes).",
+      examples: `<pre>// Setting up a conversion target:
+ConversionTarget target(getContext());
+
+// Mark entire dialect as legal (output may contain arith ops)
+target.addLegalDialect<arith::ArithDialect>();
+
+// Mark specific ops as illegal (must be lowered away)
+target.addIllegalOp<linalg::MatmulOp>();
+
+// Dynamic legality: only 32-bit arith.addi is legal
+target.addDynamicallyLegalOp<arith::AddIOp>([](arith::AddIOp op) {
+  return op.getType().isInteger(32);
+});
+
+// Apply conversion: success iff all illegal ops rewritten
+if (failed(applyPartialConversion(module, target, patterns)))
+  signalPassFailure();</pre>
+<p>The target drives the <em>what</em> of lowering; patterns drive the <em>how</em>. Together with TypeConverter, they form the dialect conversion triad.</p>`,
+      related: ["Lowering", "Dialect", "Pass"],
+      usedIn: ["mlir", "lowering-pipelines"],
+      sources: [
+        { label: "MLIR Dialect Conversion", url: "https://mlir.llvm.org/docs/DialectConversion/" }
+      ]
+    },
+    "type-converter": {
+      name: "TypeConverter",
+      role: "Type mapping",
+      summary: "Maps types during dialect conversion and generates materialization IR to bridge type mismatches between converted and unconverted code.",
+      definition: "A TypeConverter registers type conversion rules (1-to-1 or 1-to-N mapping) and materialization callbacks that produce IR to bridge type gaps. Source materializations cast converted values back to original types for unconverted users; target materializations cast to the type a pattern expects. This enables gradual type conversion where not all operations are rewritten simultaneously.",
+      examples: `<pre>// TypeConverter that maps index → i64:
+class MyTypeConverter : public TypeConverter {
+  MyTypeConverter() {
+    addConversion([](IndexType t) { return IntegerType::get(ctx, 64); });
+    // Materialization: insert index_cast when needed
+    addSourceMaterialization([](OpBuilder &b, IndexType t,
+                                ValueRange inputs, Location loc) {
+      return b.create<arith::IndexCastOp>(loc, t, inputs[0]).getResult();
+    });
+  }
+};</pre>
+<p>Without a TypeConverter, operand types stay unchanged. With one, the framework automatically remaps operands in ConversionPatterns and inserts <code>unrealized_conversion_cast</code> as fallback bridges.</p>`,
+      related: ["ConversionTarget", "Lowering", "Dialect"],
+      usedIn: ["mlir", "lowering-pipelines"],
+      sources: [
+        { label: "MLIR Dialect Conversion — Type Conversion", url: "https://mlir.llvm.org/docs/DialectConversion/#type-conversion" }
+      ]
+    },
+    "rewrite-pattern": {
+      name: "RewritePattern",
+      role: "Transform unit",
+      summary: "Base class for DAG-to-DAG rewrite rules. Two-phase: match then mutate. All IR changes go through a PatternRewriter.",
+      definition: "A RewritePattern defines a single transformation rule: an optional root operation type, a static benefit score, and a matchAndRewrite method. The match phase checks applicability without modifying IR. On match, the rewrite phase mutates IR through the PatternRewriter API (never directly). Patterns are collected into RewritePatternSets and applied by drivers (greedy fixed-point, single-pass walk, or conversion).",
+      examples: `<pre>// A canonicalization pattern that folds x + 0 → x:
+struct AddZeroElim : public OpRewritePattern<arith::AddIOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(arith::AddIOp op,
+                                PatternRewriter &rewriter) const override {
+    // Match: check if RHS is constant 0
+    APInt value;
+    if (!matchPattern(op.getRhs(), m_ConstantInt(&value)) || !value.isZero())
+      return failure();
+
+    // Rewrite: replace with LHS (must go through rewriter)
+    rewriter.replaceOp(op, op.getLhs());
+    return success();
+  }
+};</pre>
+<p>Key rules: (1) match before mutate, (2) root op must be replaced/erased/updated, (3) never bypass the rewriter, (4) benefit is static — use multiple patterns for dynamic costs.</p>`,
+      related: ["Pass", "Operation", "Lowering"],
+      usedIn: ["mlir", "ir-design"],
+      sources: [
+        { label: "MLIR Pattern Rewriting", url: "https://mlir.llvm.org/docs/PatternRewriter/" }
       ]
     }
   }
