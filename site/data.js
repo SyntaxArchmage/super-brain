@@ -57,7 +57,7 @@ const WIKI = {
       type: "article",
       meta: [
         { text: "Primary sources: 36 official documents", dot: "#2563eb" },
-        { text: "Concepts: 17 entities" },
+        { text: "Concepts: 26 entities" },
         { text: "Cross-references: 4 pages" }
       ],
       body: `
@@ -1501,6 +1501,100 @@ linalg.generic {
       usedIn: ["mlir", "compiler-ai-infra", "lowering-pipelines"],
       sources: [
         { label: "Linalg Dialect Rationale", url: "https://mlir.llvm.org/docs/Rationale/RationaleLinalgDialect/" }
+      ]
+    },
+    transformDialect: {
+      name: "Transform Dialect",
+      role: "Meta-dialect",
+      summary: "A meta-dialect for declaring programmatic transformation schedules over payload IR — transformation scripts expressed as IR themselves, interpreted by a pass.",
+      definition: "The Transform dialect lets users express match-and-transform scripts (named sequences, handles, parameters) that an interpreter pass executes on payload IR. Unlike ordinary RewritePatterns which are C++ code, Transform IR is itself MLIR — inspectable, composable, and serializable. Typed handles (TransformHandleTypeInterface) reference payload ops/values; named sequences define reusable schedules. The interpreter pass applies these schedules, bridging declarative scheduling with MLIR's pass infrastructure.",
+      examples: `<pre>// Define a reusable transform sequence:
+transform.named_sequence @pipeline(%func : !transform.any_op) {
+  %matmul = transform.structured.match ops{["linalg.matmul"]}
+              in %func : (!transform.any_op) -> !transform.any_op
+  %tiled, %loops = transform.structured.tile_using_for %matmul
+              [4, 4, 4] : (!transform.any_op) -> (!transform.any_op, !transform.any_op)
+  transform.yield
+}
+
+// Invoke via CLI:
+// mlir-opt module.mlir -transform-interpreter -transform-preload-library=lib.mlir</pre>
+<p>Key difference from passes: the schedule is data (IR), not compiled code. This enables user-controlled compilation strategies without rebuilding the compiler.</p>`,
+      related: ["Pass", "RewritePattern", "Interface", "PDLL", "Linalg"],
+      usedIn: ["mlir", "compiler-ai-infra", "lowering-pipelines"],
+      sources: [
+        { label: "MLIR Transform Dialect", url: "https://mlir.llvm.org/docs/Dialects/Transform/" }
+      ]
+    },
+    passPipeline: {
+      name: "Pass Pipeline",
+      role: "Infrastructure",
+      summary: "An ordered composition of passes (optionally run to fixpoint) defining a reusable compilation stage — the unit of mlir-opt invocation.",
+      definition: "A pass pipeline is a textual or programmatic sequence of passes with options. Pipelines encode ordering contracts: canonicalize before control-flow-sink, deallocation pipeline after bufferization. The composite-fixed-point-pass embeds a nested pipeline and iterates up to a max-iterations limit. Reducer passes consume pipeline definitions for test-case minimization. Pipelines can nest within module/function scopes for fine-grained control.",
+      examples: `<pre>// Textual pipeline specification:
+mlir-opt input.mlir -pass-pipeline='builtin.module(canonicalize,cse)'
+
+// Composite fixed-point (iterate until convergence):
+mlir-opt -composite-fixed-point-pass='pipeline=canonicalize,cse max-iterations=10'
+
+// Bufferization pipeline (ordering is contractual):
+mlir-opt input.mlir \\
+  -one-shot-bufferize \\
+  -buffer-deallocation-pipeline \\
+  -convert-bufferization-to-memref</pre>
+<p>Pass ordering encodes semantic contracts: canonicalize removes dead code before sinking; bufferization must precede deallocation. Violating order produces incorrect IR.</p>`,
+      related: ["Pass", "Bufferization", "Lowering", "Fold"],
+      usedIn: ["mlir", "compiler-ai-infra"],
+      sources: [
+        { label: "MLIR Pass Infrastructure", url: "https://mlir.llvm.org/docs/PassManagement/" }
+      ]
+    },
+    ownershipIndicator: {
+      name: "Ownership Indicator",
+      role: "Mechanism",
+      summary: "An i1 SSA value tracking which block is responsible for deallocating a MemRef — the core abstraction behind ownership-based buffer deallocation.",
+      definition: "After One-Shot Bufferize inserts allocations without deallocs, ownership-based deallocation assigns each MemRef an i1 flag meaning 'this block must deallocate.' The pass models ownership with a lattice (uninitialized → unique(X) → unknown) to defer IR materialization until needed. At block ends, indicators become condition operands of bufferization.dealloc. Function arguments never acquire ownership; returned MemRefs transfer ownership to callers — analogous to C++ unique_ptr semantics.",
+      examples: `<pre>%alloc = memref.alloc() : memref<?xi8>   // ownership: constant true
+%alloca = memref.alloca() : memref<?xi8>  // ownership: constant false
+%select = arith.select %cond, %alloc, %alloca : memref<?xi8>
+// ownership: unknown (merged), materialized as arith.select on i1 flags
+
+// At block end — conditional deallocation:
+cf.cond_br %cond, ^bb1(%alloc, %true : memref<?xi8>, i1),
+                  ^bb1(%other, %false : memref<?xi8>, i1)
+^bb1(%buf: memref<?xi8>, %owns: i1):
+  bufferization.dealloc (%buf : memref<?xi8>) if (%owns) retain ()</pre>
+<p>The recommended pipeline: <code>one-shot-bufferize → expand-realloc → ownership-based-buffer-deallocation → canonicalize → buffer-deallocation-simplification → lower-deallocations</code>.</p>`,
+      related: ["Bufferization", "Value", "Block", "Pass", "Terminator"],
+      usedIn: ["mlir", "lowering-pipelines"],
+      sources: [
+        { label: "Ownership-Based Buffer Deallocation", url: "https://mlir.llvm.org/docs/OwnershipBasedBufferDeallocation/" }
+      ]
+    },
+    diagnosticEngine: {
+      name: "DiagnosticEngine",
+      role: "Infrastructure",
+      summary: "Central MLIRContext service for emitting diagnostics (errors, warnings, remarks) with composable user-defined handlers and multi-threading support.",
+      definition: "The DiagnosticEngine is MLIR's diagnostic bus, accessed via ctx->getDiagEngine(). Handlers with signature LogicalResult(Diagnostic&) are registered in stack order — returning success() consumes the diagnostic, failure() propagates to prior handlers. Most user code emits through Operation::emitError/Warning/Remark. Built-in handlers provide SourceMgr-based caret printing, expected-diagnostic verification for tests, and deterministic ordering under multi-threading via ParallelDiagnosticHandler with per-thread order IDs.",
+      examples: `<pre>// Register a custom handler:
+DiagnosticEngine &engine = ctx->getDiagEngine();
+auto id = engine.registerHandler([](Diagnostic &diag) -> LogicalResult {
+  llvm::errs() << diag.str() << "\\n";
+  return success();  // consumed — stops propagation
+});
+
+// Emit from an operation (most common API):
+op->emitError("invalid operand type: ") << op->getOperand(0).getType();
+op->emitWarning("deprecated usage").attachNote(loc) << "see migration guide";
+
+// Multi-threaded deterministic ordering:
+ParallelDiagnosticHandler handler(ctx);
+handler.setOrderIDForThread(orderID);  // ensures stable output order</pre>
+<p>Error severity shows ops in generic form (for invalid/unstable IR); warnings/remarks use pretty custom printers. Notes must attach to a parent diagnostic via <code>attachNote</code>.</p>`,
+      related: ["Operation", "Pass", "Attribute"],
+      usedIn: ["mlir", "compiler-ai-infra"],
+      sources: [
+        { label: "MLIR Diagnostics Infrastructure", url: "https://mlir.llvm.org/docs/Diagnostics/" }
       ]
     }
   }
