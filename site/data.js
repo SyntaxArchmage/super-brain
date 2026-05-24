@@ -1347,6 +1347,50 @@ struct AddZeroElim : public OpRewritePattern<arith::AddIOp> {
       sources: [
         { label: "MLIR Pattern Rewriting", url: "https://mlir.llvm.org/docs/PatternRewriter/" }
       ]
+    },
+    bufferization: {
+      name: "Bufferization",
+      role: "Transformation",
+      summary: "Converting tensor (value-semantics) IR to memref (side-effecting buffer) IR. Determines where to allocate memory and where copies are needed.",
+      definition: "Bufferization is the tensor→memref transition: it converts immutable, value-semantic tensor operations into side-effecting buffer (memref) operations with explicit memory allocation. One-Shot Bufferize performs whole-function analysis to maximize in-place writes (reusing input buffers for outputs) and only inserts copies where read-after-write conflicts force it. Destination-Passing Style (DPS) — where ops declare an 'outs' operand — provides the bufferization anchor for in-place reuse.",
+      examples: `<pre>// Before bufferization (tensor — value semantics):
+%0 = linalg.matmul ins(%A, %B : tensor<8x8xf32>, tensor<8x8xf32>)
+                   outs(%C : tensor<8x8xf32>) -> tensor<8x8xf32>
+//                      ↑ DPS: 'outs' is the bufferization anchor
+
+// After bufferization (memref — side-effecting):
+linalg.matmul ins(%A_buf, %B_buf : memref<8x8xf32>, memref<8x8xf32>)
+              outs(%C_buf : memref<8x8xf32>)
+// %C_buf may alias %C's original buffer (in-place) or be freshly allocated
+// depending on conflict analysis</pre>
+<p>Key insight: bufferization ≠ lowering ≠ deallocation. These are separate pipeline stages. Non-DPS tensor ops always allocate; DPS ops can reuse their destination buffer.</p>`,
+      related: ["Lowering", "TypeConverter", "Operation"],
+      usedIn: ["mlir", "lowering-pipelines"],
+      sources: [
+        { label: "MLIR Bufferization", url: "https://mlir.llvm.org/docs/Bufferization/" }
+      ]
+    },
+    fold: {
+      name: "Fold",
+      role: "Local simplification",
+      summary: "Operation's preferred canonicalization hook: replaces an op with existing values/attributes without creating new IR. First-choice for cheap simplifications.",
+      definition: "Fold is a constrained simplification method on an operation that can (1) no-op, (2) mutate the op in place, or (3) return existing Values/Attributes to substitute for the op's results. Unlike RewritePattern, fold cannot create new operations or SSA values. Attribute results are materialized into constant ops via DialectFoldInterface. Fold is the first-choice for canonicalization — invocable anywhere (OpBuilder::createOrFold, dialect conversion), while RewritePattern handles structural changes.",
+      examples: `<pre>// Fold: constant folding of arith.addi
+// Input:  %c1 = arith.constant 2 : i32
+//         %c2 = arith.constant 3 : i32
+//         %r = arith.addi %c1, %c2 : i32
+// Fold returns: IntegerAttr(5) → materialized as arith.constant 5
+
+// Fold vs RewritePattern:
+// fold:    x + 0 → return {x}  (no new ops)
+// pattern: br ^bb1 when ^bb1 is only successor → erase branch + merge blocks
+//          (needs structural change → must use RewritePattern)</pre>
+<p>Canonicalization uses a single greedy pass that runs all dialects' fold methods and patterns until fixpoint. Rules must converge cheaply — cyclic rewrites are bugs.</p>`,
+      related: ["RewritePattern", "Pass", "Operation"],
+      usedIn: ["mlir", "ir-design"],
+      sources: [
+        { label: "MLIR Canonicalization", url: "https://mlir.llvm.org/docs/Canonicalization/" }
+      ]
     }
   }
 };
