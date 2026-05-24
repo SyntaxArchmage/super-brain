@@ -1391,6 +1391,57 @@ linalg.matmul ins(%A_buf, %B_buf : memref<8x8xf32>, memref<8x8xf32>)
       sources: [
         { label: "MLIR Canonicalization", url: "https://mlir.llvm.org/docs/Canonicalization/" }
       ]
+    },
+    ods: {
+      name: "ODS",
+      role: "Framework",
+      summary: "Operation Definition Specification — TableGen-based declarative system that generates C++ for operations, types, attributes, parsers, printers, and docs.",
+      definition: "ODS is MLIR's declarative layer built on TableGen. Instead of hand-writing C++ for each operation's builder, verifier, parser, and printer, developers write a .td specification. ODS generates: accessor methods, assembly format parsers/printers, documentation, bytecode serialization, and verifier logic. This is the expected path for defining new dialects — extensible dialects (DynamicOpDefinition) offer a runtime alternative for meta-programming scenarios.",
+      examples: `<pre>// TableGen ODS definition for an operation:
+def MyOp : Op<MyDialect, "my_op", [Pure, Commutative]> {
+  let summary = "element-wise addition";
+  let arguments = (ins AnyTensor:$lhs, AnyTensor:$rhs);
+  let results = (outs AnyTensor:$result);
+  let assemblyFormat = [{
+    $lhs \`,\` $rhs attr-dict \`:\` type($result)
+  }];
+  let hasFolder = 1;
+  let hasCanonicalizer = 1;
+}
+// Generates: MyOp class with getLhs(), getRhs(), getResult(),
+// parser, printer, verifier, folder stub, canonicalization registration</pre>
+<p>ODS separates what (declarative spec) from how (generated C++), reducing boilerplate by 80-90% for typical operations.</p>`,
+      related: ["Dialect", "Operation", "Trait"],
+      usedIn: ["mlir", "parser-practice", "ir-design"],
+      sources: [
+        { label: "MLIR Defining Dialects", url: "https://mlir.llvm.org/docs/DefiningDialects/" }
+      ]
+    },
+    "symbol-table": {
+      name: "Symbol Table",
+      role: "Container",
+      summary: "Operation that holds named symbols with uniqueness enforcement, lookup, and visibility control. Enables thread-safe references without SSA use-lists.",
+      definition: "A SymbolTable is an operation (marked with OpTrait::SymbolTable) that contains named symbol definitions. Symbols are referenced by name (SymbolRefAttr) rather than SSA values, enabling thread-safe parallel compilation — refs don't create use-list edges that block concurrent modification. Symbols have visibility (public/private/nested) controlling reference scope. The dual model (symbols for global names, SSA for local data) is why MLIR can run function-level passes in parallel.",
+      examples: `<pre>// module is a SymbolTable containing function symbols
+module {
+  // @matmul is a symbol (public by default)
+  func.func @matmul(%A: memref<8x8xf32>, %B: memref<8x8xf32>) { ... }
+
+  // @helper is private (only visible within this module)
+  func.func private @helper(%x: i32) -> i32 { ... }
+
+  // Referencing symbols via SymbolRefAttr:
+  func.func @caller() {
+    %r = call @matmul(...) : ...    // ← symbol reference
+    // Nested: @outer_module::@inner_func
+  }
+}</pre>
+<p>Symbols have no SSA results — they are named, not valued. When both name and address are needed, dialects provide materializers (e.g. <code>llvm.mlir.addressof</code>).</p>`,
+      related: ["Symbol", "Dialect", "Operation"],
+      usedIn: ["mlir", "ir-design"],
+      sources: [
+        { label: "MLIR Symbols and Symbol Tables", url: "https://mlir.llvm.org/docs/SymbolsAndSymbolTables/" }
+      ]
     }
   }
 };
