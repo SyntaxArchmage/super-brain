@@ -329,6 +329,83 @@ const WIKI_CN = {
       "summary": "结构化计算方言：操作将循环嵌套语义作为元数据，从而无需多面体分析即可实现构造正确的平铺/融合。",
       "definition": "Linalg 方言表示结构化计算（matmul、conv、通用张量运算），其中循环结构和数据访问模式以运算的语义进行编码，而不是通过分析来恢复。这种“语义即元数据”设计意味着平铺、融合和矢量化始终是合法的转换（无需依赖分析）。 Linalg 使用渐进式降低：平铺的 linalg.matmul 仍然是 linalg.matmul，保留高级意图，直到最终降低到循环。",
       "examples": "<pre>// 命名 op（携带 matmul 语义）：\n%C = linalg.matmul ins(%A, %B : 张量<8x8xf32>, 张量<8x8xf32>)\n                   outs(%C_init : 张量<8x8xf32>) -> 张量<8x8xf32>\n\n// 平铺之后：平铺上仍然有 linalg.matmul\nscf.for %i = ... {\n  scf.for %j = ... {\n    %tile_A = 张量.extract_slice %A[%i, 0][4, 8][1, 1]\n    %tile_B = 张量.extract_slice %B[0, %j][8, 4][1, 1]\n    %tile_C = linalg.matmul ins(%tile_A, %tile_B : ...)\n                            outs(...) -> 张量<4x4xf32>\n  }\n}\n\n// 通用形式（indexing_maps 中明确的循环结构）：\nlinalg.generic {\n  indexing_maps = [affine_map<(m,n,k) -> (m,k)>, // A\n                   affine_map<(m,n,k) -> (k,n)>, // B\n                   affine_map<(m,n,k) -> (m,n)>], // C\n  iterator_types = [\"并行\",\"并行\",\"缩减\"]\n} ins(%A, %B) outs(%C) { ... }</pre>\n<p>三种可互换的形式：命名（matmul）、类别（收缩）、通用。管道选择在每个阶段使匹配/转换最简单的那个。</p>"
+    },
+    "transformDialect": {
+      "name": "转换方言",
+      "role": "元方言",
+      "summary": "一种元方言，用于通过有效负载 IR 声明编程转换计划 - 表示为 IR 本身的转换脚本，由传递解释。",
+      "definition": "Transform 方言允许用户表达解释器在有效负载 IR 上执行的匹配和转换脚本（命名序列、句柄、参数）。与普通的 RewritePatterns（C++ 代码）不同，Transform IR 本身就是 MLIR——可检查、可组合和可序列化。类型化句柄（TransformHandleTypeInterface）引用有效负载操作/值；命名序列定义可重用的时间表。解释器通行证应用这些调度，将声明式调度与 MLIR 的通行证基础设施桥接起来。",
+      "examples": "<pre>// 定义可重用的转换序列：\ntransform.named_sequence @pipeline(%func : !transform.any_op) {\n  %matmul = transform.structed.match ops{[\"linalg.matmul\"]}\n              在 %func 中： (!transform.any_op) -> !transform.any_op\n  ％平铺，％循环=transform.structed.tile_using_for％matmul\n              [4, 4, 4] : (!transform.any_op) -> (!transform.any_op, !transform.any_op)\n  变换.yield\n}\n\n// 通过 CLI 调用：\n// mlir-opt module.mlir -transform-interpreter -transform-preload-library=lib.mlir</pre>\n<p>与 pass 的主要区别：时间表是数据 (IR)，而不是编译的代码。这使得用户可以控制编译策略而无需重建编译器。</p>"
+    },
+    "passPipeline": {
+      "name": "通过管道",
+      "role": "基础设施",
+      "summary": "定义可重用编译阶段的通道的有序组合（可以选择运行到固定点）——mlir-opt 调用的单元。",
+      "definition": "传递管道是带有选项的文本或编程序列的传递。管道编码排序契约：在控制流接收器之前规范化，在缓冲之后释放管道。复合定点通道嵌入嵌套管道并迭代至最大迭代限制。减速器传递使用管道定义来最小化测试用例。管道可以嵌套在模块/函数范围内以进行细粒度控制。",
+      "examples": "<pre>// 文本管道规范：\nmlir-opt input.mlir -pass-pipeline='builtin.module(canonicalize,cse)'\n\n// 复合定点（迭代直到收敛）：\nmlir-opt -composite-fixed-point-pass='pipeline=canonicalize,cse max-iterations=10'\n\n// 缓冲管道（顺序是约定的）：\nmlir-opt 输入.mlir \\\n  -一次性缓冲\\\n  -缓冲区释放管道\\\n  -将缓冲转换为memref</pre>\n<p>传递排序对语义契约进行编码：canonicalize 在下沉之前删除死代码；缓冲必须先于释放。违反顺序会产生不正确的 IR。</p>"
+    },
+    "ownershipIndicator": {
+      "name": "所有权指标",
+      "role": "机制",
+      "summary": "i1 SSA 值跟踪哪个块负责释放 MemRef — 基于所有权的缓冲区释放背后的核心抽象。",
+      "definition": "在 One-Shot Bufferize 插入没有释放的分配后，基于所有权的释放会为每个 MemRef 分配一个 i1 标志，表示“此块必须释放”。该通行证使用晶格（未初始化→唯一（X）→未知）对所有权进行建模，以将 IR 实现推迟到需要时。在块结束时，指示器成为 bufferization.dealloc 的条件操作数。函数参数永远不会获得所有权；返回的 MemRefs 将所有权转移给调用者 — 类似于 C++ unique_ptr 语义。",
+      "examples": "<pre>%alloc = memref.alloc() : memref<?xi8> // 所有权：常量 true\n%alloca = memref.alloca() : memref<?xi8> // 所有权：常量 false\n%select = arith.select %cond, %alloc, %alloca : memref<?xi8>\n// 所有权：未知（合并），具体化为 i1 标志上的 arith.select\n\n// 在块末尾 - 有条件释放：\ncf.cond_br %cond, ^bb1(%alloc, %true : memref<?xi8>, i1),\n                  ^bb1(%other, %false : memref<?xi8>, i1)\n^bb1(%buf: memref<?xi8>, %owns: i1):\n  bufferization.dealloc(%buf : memref<?xi8>) if (%owns)retain()</pre>\n<p>推荐的管道：<code>一次性缓冲→扩展重新分配→基于所有权的缓冲区释放→规范化→缓冲区释放简化→较低的释放</code>。</p>"
+    },
+    "diagnosticEngine": {
+      "name": "诊断引擎",
+      "role": "基础设施",
+      "summary": "中央 MLIRContext 服务，用于通过可组合的用户定义处理程序和多线程支持发出诊断信息（错误、警告、注释）。",
+      "definition": "DiagnosticEngine 是 MLIR 的诊断总线，可通过 ctx->getDiagEngine() 访问。具有签名 LogicalResult(Diagnostic&) 的处理程序按堆栈顺序注册 - 返回 success() 消耗诊断信息，failure() 传播到先前的处理程序。大多数用户代码通过Operation::emitError/Warning/Remark 发出。内置处理程序提供基于 SourceMgr 的插入符打印、测试的预期诊断验证以及通过 ParallelDiagnosticHandler 和每个线程顺序 ID 进行多线程下的确定性排序。",
+      "examples": "<pre>// 注册自定义处理程序：\nDiagnosticEngine &engine = ctx->getDiagEngine();\nauto id = engine.registerHandler([](诊断&diag) -> LogicalResult {\n  llvm::errs() << diag.str() << \"\\n\";\n  返回成功（）；  // 消耗 — 停止传播\n});\n\n// 从操作中发出（最常见的 API）：\nop->emitError(\"无效的操作数类型：\") << op->getOperand(0).getType();\nop->emitWarning(\"已弃用的用法\").attachNote(loc) << \"请参阅迁移指南\";\n\n// 多线程确定性排序：\nParallelDiagnosticHandler 处理程序（ctx）；\nhandler.setOrderIDForThread(orderID);  // 确保输出顺序稳定</pre>\n<p>错误严重性以通用形式显示操作（对于无效/不稳定的 IR）；警告/备注使用非常定制的打印机。注释必须通过 <code>attachNote</code> 附加到父诊断。</p>"
+    },
+    "action": {
+      "name": "行动",
+      "role": "追踪",
+      "summary": "围绕任何 IR 转换（从单次折叠到完整传递）的统一、可拦截的包装器，支持跟踪、断点和调试器式执行控制。",
+      "definition": "操作以任意粒度命名编译器工作的一个单元并确定范围。派生自tracing::ActionImpl<T>，它通过ArrayRef<IRUnit>（操作、块或区域）记录受影响的IR，并公开用于过滤的静态标记。执行始终由处理程序介导，该处理程序决定包装的 lambda 是否运行，启用调试计数器 (-mlir-debug-counter=tag-skip=N,tag-count=M) 以进行二分式调试，而无需滚动日志输出。",
+      "examples": "<pre>// 定义平铺的自定义操作：\n类 TileLoopAction ：公共跟踪::ActionImpl<TileLoopAction> {\n公众：\n  static constexpr StringLiteral 标签 = \"linalg-tile-loop\";\n  TileLoopAction(ArrayRef<IRUnit> 单位, inttileSize)\n      ：基础（单位），tileSize（tileSize）{}\n  int 瓦片大小；\n};\n\n// 通过上下文调度（处理程序决定运行/跳过）：\n上下文->executeAction<TileLoopAction>(\n    [&]{ /* 执行平铺重写 */ }, {loopOp},tileSize);\n\n// CLI 二分：跳过前 5 个，运行下一个 3，然后停止：\n// --mlir-debug-counter=linalg-tile-loop-skip=5,linalg-tile-loop-count=3</pre>\n<p>传递运行和单独的模式应用程序都是操作调度点 - 在一个框架下统一粗粒度 IR 转储和细粒度跟踪。</p>"
+    },
+    "capi": {
+      "name": "MLIR C API",
+      "role": "基础设施",
+      "summary": "稳定的 C 互操作表面公开核心 MLIR IR，并作为非 C++ 语言绑定（Python、Rust 等）的不透明句柄传递。",
+      "definition": "MLIR C API 是用于在 C++ 外部嵌入 MLIR 的主要外部函数接口。核心 IR 组件（MlirOperation、MlirValue、MlirBlock 等）显示为不透明的 typedef；操作是通过前缀函数进行的。所有权在命名中进行编码：Create/Take 将所有权转移给调用者，Destroy 释放它。调用者使用 mlirXIsNull 检查无效性，并使用 mlirXIsAY 执行动态类型检查。扩展作者使用包装/展开助手在 C/C++ 之间进行转换。",
+      "examples": "<pre>// 通过 C API 创建并检查操作：\nMlirOperation op = mlirOperationCreate(/* 状态 */);\nif (!mlirOperationIsNull(op)) {\n  intptr_t n = mlirOperationGetNumOperands(op);\n  MlirValue v = mlirOperationGetOperand(op, 0);\n  MlirType t = mlirValueGetType(v);\n\n  // 通过分块回调打印 IR（从不假设 null 终止）：\n  mlirOperationPrint(op, my_append_callback, my_buffer);\n\n  mlirOperationDestroy(op);  // 创建后由调用者拥有\n}\n\n// 构建于之上的 Python 绑定：\n# op = Operation.create(\"arith.constant\", results=[i32], ...)</pre>\n<p>特定于语义方言的 API（类型化访问器）由 ODS 在此扁平核心之上生成 - C API 有意仅公开位置操作数/属性访问。</p>"
+    },
+    "shapeFunction": {
+      "name": "形状函数",
+      "role": "机制",
+      "summary": "纯本地函数从其操作数、属性和区域派生操作的输出形状 - 支持编译时推理和运行时验证。",
+      "definition": "形状函数沿三个轴将操作输入映射到输出形状元数据：元素类型、等级和维度。它必须能够表达动态形状，报告可操作的错误，不需要图形范围的依赖关系，并且可以降低为内联运行时检查。 C++ 实现使用 InferShapedTypeOpInterface；长期方向是声明性形状方言函数。 ODS 特征（SameOperandsAndResultType、broadcastable）可以自动生成简单的形状函数。",
+      "examples": "<pre>// C++接口实现：\nLogicalResult MyOp::inferReturnTypeComponents(\n    MLIRContext *ctx，std::可选<位置> loc，\n    ValueShapeRange 操作数、DictionaryAttr 属性、\n    OpaqueProperties 属性、RegionRange 区域、\n    SmallVectorImpl<ShapedTypeComponents> &inferredReturnShapes) {\n  // 元素操作的输出形状 == 输入形状\n  inferredReturnShapes.push_back(\n      ShapedTypeComponents(操作数[0].getType()));\n  返回成功（）；\n}\n\n// 通过特征自动生成 ODS：\ndef MyOp : Op<\"my.op\", [SameOperandsAndResultType]> { ... }\n// → 形状函数自动导出：输出类型 == 操作数类型\n\n// 形状方言（声明性目标）：\n// shape.assume_equal %lhs_shape, %rhs_shape</pre>\n<p>形状函数与类型推断接口组合 - 张量通常可以仅从形状类型推断中推导出来，而 MemRef 布局需要额外的处理。</p>"
+    },
+    "quantizedType": {
+      "name": "量化类型",
+      "role": "类型系统",
+      "summary": "将浮点表达语义与积分存储表示连接起来——将比例、零点和每层/每轴量化参数记录为方言类型。",
+      "definition": "QuantizedType（尤其是 UniformQuantizedType）包装了映射 real_value = (storage_value - Zero_point) * scale，将表达类型（浮点型）与存储类型（整数）配对。转换操作（qcast、dcast、scast）在表达、量化和原始存储类型之间移动值，同时保留量化元数据。训练时 fake_quant 降低为 qcast→dcast 对，让编译器折叠强制转换、部分量化图，并用本机量化操作替换 DQ→op→Q 三明治。",
+      "examples": "<pre>// 浮点张量→通过转换操作量化存储：\n%q = quant.qcast %f : 张量<4xf32>\n     -> !quant.uniform<ui8:f32, 0.1:128>\n%stored = quant.scast %q : !quant.uniform<...> -> 张量<4xui8>\n\n// 对混合精度区域进行反量化：\n%f2 = quant.dcast %q : !quant.uniform<...> -> 张量<4xf32>\n\n// 每轴量化（通道维度 = 3）：\n!quant.uniform<i8:f32:3, {0.1:10, 0.2:20, 0.15:15, 0.3:30}>\n\n// TFLite 模式：将 (DQ, op, Q) 折叠为量化 op\n// tfl.dequantize → tfl.conv_2d → tfl.quantize\n// 变为：tfl.conv_2d_quantized（原生）</pre>\n<p>仿射量化（使用zero_point）确保真正的零可以精确表示——这是卷积中无偏零填充所必需的。</p>"
+    },
+    "bytecodeFormat": {
+      "name": "字节码格式",
+      "role": "基础设施",
+      "summary": "MLIR IR 的版本化二进制序列化格式 — 通过分段布局、共享表和延迟属性加载进行紧凑存储和快速加载/保存。",
+      "definition": "MLIR 字节码文件以幻数“MLïR”、格式版本 varint、生产者字符串和有序部分（字符串表、方言注册表、带有偏移表的属性/类型池、资源、IR）开头。操作共享一个编码模式：名称索引、标记可选字段的encodingMask 位掩码以及内联或分段区域数据。方言可以通过 BytecodeDialectInterface 选择自定义编码以进行模式迁移；如果没有，文本汇编格式字符串将充当后备。",
+      "examples": "<pre>// 文本 IR（人类可读）：\nfunc.func @foo(%arg0: i32) -> i32 {\n  %0 = arith.addi %arg0, %arg0 : i32\n  返回%0：i32\n}\n\n// 在磁盘上：magic \"MLïR\" + 版本 + 部分\n// 文件布局：\n// [4B 魔法] [varint 版本] [空项生成器]\n// [Section: StringTable] → 共享标识符池\n// [Section: DialectRegistry] → 方言名称 + 版本\n// [Section: AttrTypePool] → 通过偏移量可延迟加载\n// [部分：IR] → 带有encodingMask 的操作树\n\n// 文本和字节码之间的转换：\nmlir-opt input.mlir -emit-bytecode -o 输出.mlirbc\nmlir-opt output.mlirbc // 读回，打印文本</pre>\n<p>当方言定义保持不变时，保证兼容性； <code>BytecodeDialectInterface</code> 支持自定义 attr/type 编码和 <code>upgradeFromVersion</code> 迁移以实现方言演变。</p>"
+    },
+    "mlirContext": {
+      "name": "MLIR上下文",
+      "role": "运行时根",
+      "summary": "MLIR 实例的顶级舞台和注册表 — 拥有方言加载、类型/属性唯一、诊断、操作分派和线程配置。",
+      "definition": "MLIRContext 是所有 MLIR 工作发生的全局环境。方言必须先加载到上下文中，然后才能实例化其操作、类型或属性。传递声明依赖方言，以便上下文在多线程管道运行之前准备就绪。该上下文还托管 DiagnosticEngine、Action 跟踪处理程序和线程模式（默认为多线程，用于调试的单线程）。与操作/值（IR 节点）不同，MLIRContext 不会出现在 .mlir 文本中，但始终作为第一个创建的内容出现在 C++ 和 C API 代码中。",
+      "examples": "<pre>// 创建上下文并加载方言：\nMLIRContext 上下文；\ncontext.loadDialect<arith::ArithDialect, func::FuncDialect>();\n\n// 在该上下文中构建 IR：\nOpBuilder 构建器(&context);\nModuleOp 模块 = builder.create<ModuleOp>(UnknownLoc::get(&context));\n\n// 在初始化时传递接收上下文：\nvoid MyPass::initialize(MLIRContext *ctx) {\n  RewritePatternSet 模式(ctx);\n  填充我的模式（模式）；\n}\n\n// 用于调试的线程控制：\ncontext.disableMultithreading();  // 确定性操作/诊断顺序\ncontext.enableMultithreading();</pre>\n<p>每个 IR 对象在每个上下文中都是唯一的。两个上下文产生不兼容的 IR - 您不能混合来自不同上下文的操作。</p>"
+    },
+    "opBuilder": {
+      "name": "操作生成器",
+      "role": "红外构造器",
+      "summary": "用于在选定插入点创建操作、类型和属性的有状态 API — 与操作遍历相对应的构造。",
+      "definition": "OpBuilder 包装 MLIRContext 并跟踪插入点（块和迭代器）。 create<SomeOp>(...) 分配一个新的操作并将其链接到块中；帮助器方法构建常见类型（getF32Type、getIndexType）和属性（getI64IntegerAttr）。 ODS 生成的 build() 方法采用 OpBuilder 和 OperationState。 PatternRewriter 通过重写簿记（replaceOp、eraseOp、notifyRootUpdate）扩展了 OpBuilder。您可以通过操作/区域/块遍历现有的 IR；您通过 OpBuilder 发出新的 IR。",
+      "examples": "<pre>// 前端发射（例如玩具语言 → MLIR）：\nOpBuilder 构建器(&context);\nbuilder.setInsertionPointToStart(entryBlock);\n值 c = builder.create<arith::ConstantOp>(loc,\n    getF32FloatAttr(1.0));\nbuilder.create<func::ReturnOp>(loc, c);\n\n// 在 RewritePattern 内部（PatternRewriter 扩展了 OpBuilder）：\nLogicalResult matchAndRewrite(AddOp op,\n                              PatternRewriter &rewriter) const override {\n  值 lhs = op.getLhs();\n  // 在同一位置替换为新操作：\n  rewriter.replaceOpWithNewOp<OptimizedAddOp>(op, lhs, op.getRhs());\n  返回成功（）；\n}\n\n// 方言常量物化钩子：\n操作 *MyDialect::materializeConstant(\n    OpBuilder &builder, 属性值, 类型 type, 位置 loc) {\n  return builder.create<MyConstOp>(loc, cast<MyAttr>(value), type);\n}</前>\n<p>关键见解：永远不要直接创建操作 - 始终通过 OpBuilder/PatternRewriter，以便侦听器（跟踪、撤消）随时了解情况。</p>"
     }
   }
 };
