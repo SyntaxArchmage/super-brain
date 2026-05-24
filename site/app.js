@@ -116,14 +116,21 @@
         nav.querySelectorAll(".nav-children").forEach((el) => el.classList.add("open"));
         nav.querySelectorAll(".nav-domain").forEach((el) => el.classList.add("expanded"));
       }
-      // Full-text search results dropdown
-      showSearchResults(e.target.value);
+      // Full-text search: show results in main area
+      if (e.target.value.trim()) {
+        showSearchResults(e.target.value);
+      } else {
+        renderPage();
+        renderRail();
+      }
     });
-    searchInput.addEventListener("focus", () => {
-      if (searchInput.value.trim()) showSearchResults(searchInput.value);
-    });
-    searchInput.addEventListener("blur", (e) => {
-      setTimeout(() => removeSearchDropdown(), 200);
+    searchInput.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        searchInput.value = "";
+        searchInput.blur();
+        renderPage();
+        renderRail();
+      }
     });
   }
 
@@ -690,7 +697,6 @@
   }
 
   let searchIndex = null;
-  let searchDropdown = null;
 
   function initSearch() {
     searchIndex = buildSearchIndex();
@@ -698,44 +704,58 @@
 
   function showSearchResults(query) {
     if (!searchIndex) initSearch();
-    removeSearchDropdown();
-
-    if (!query.trim()) return;
+    if (!query.trim()) { renderPage(); renderRail(); return; }
 
     const results = searchQuery(query, searchIndex);
+
+    // Clear the concept rail during search
+    rail.innerHTML = `
+      <div class="rail-header">${lang === 'cn' ? '搜索' : 'Search'}</div>
+      <div class="rail-empty">${results.length} ${lang === 'cn' ? '个结果' : 'result(s)'}</div>`;
+
     if (results.length === 0) {
-      const dd = createSearchDropdown();
-      dd.innerHTML = `<div class="search-empty">${lang === 'cn' ? '未找到结果' : 'No results found'}</div>`;
+      main.innerHTML = `
+        <div class="search-results-page">
+          <h1 class="article-title">${lang === 'cn' ? '搜索结果' : 'Search Results'}</h1>
+          <p class="search-query-label">"${escapeHtml(query)}"</p>
+          <div class="search-no-results">
+            <p>${lang === 'cn' ? '未找到匹配的内容。' : 'No matching content found.'}</p>
+            <p style="color:var(--c-text-tertiary);font-size:0.875rem;">${lang === 'cn' ? '尝试不同的关键词或更短的查询。' : 'Try different keywords or a shorter query.'}</p>
+          </div>
+        </div>`;
       return;
     }
 
-    const dd = createSearchDropdown();
-    let html = "";
+    let html = `<div class="search-results-page">`;
+    html += `<h1 class="article-title">${lang === 'cn' ? '搜索结果' : 'Search Results'}</h1>`;
+    html += `<p class="search-query-label">"${escapeHtml(query)}" &mdash; ${results.length} ${lang === 'cn' ? '个匹配' : 'match(es)'}</p>`;
+    html += `<div class="search-results-list">`;
+
     for (const r of results) {
       const icon = r.type === "page" ? "📄" : "💡";
-      const snippet = getSnippet(r.text, query);
+      const snippet = getSnippet(r.text, query, 200);
       const meta = r.type === "page" ? r.domain : (lang === 'cn' ? '概念' : 'Concept');
-      html += `<div class="search-result" data-type="${r.type}" data-id="${r.id}">`;
-      html += `<div class="search-result-header">`;
+      html += `<div class="search-result-card" data-type="${r.type}" data-id="${r.id}">`;
+      html += `<div class="search-result-card-header">`;
       html += `<span class="search-result-icon">${icon}</span>`;
       html += `<span class="search-result-title">${r.title}</span>`;
-      html += `<span class="search-result-meta">${meta}</span>`;
+      html += `<span class="search-result-badge">${meta}</span>`;
       html += `</div>`;
-      html += `<div class="search-result-snippet">${snippet}</div>`;
+      html += `<div class="search-result-body">${snippet}</div>`;
       html += `</div>`;
     }
-    dd.innerHTML = html;
 
-    dd.querySelectorAll(".search-result").forEach((el) => {
+    html += `</div></div>`;
+    main.innerHTML = html;
+
+    main.querySelectorAll(".search-result-card").forEach((el) => {
       el.addEventListener("click", () => {
         const type = el.dataset.type;
         const id = el.dataset.id;
-        removeSearchDropdown();
         document.getElementById("nav-search-input").value = "";
         if (type === "page") {
           navigate(id);
         } else {
-          // For concepts, navigate to the first page that uses it
           const concept = WIKI.concepts?.[id];
           if (concept?.usedIn?.length > 0) {
             navigate(concept.usedIn[0]);
@@ -745,20 +765,8 @@
     });
   }
 
-  function createSearchDropdown() {
-    removeSearchDropdown();
-    const dd = document.createElement("div");
-    dd.className = "search-dropdown";
-    dd.id = "search-dropdown";
-    nav.appendChild(dd);
-    searchDropdown = dd;
-    return dd;
-  }
-
-  function removeSearchDropdown() {
-    const existing = document.getElementById("search-dropdown");
-    if (existing) existing.remove();
-    searchDropdown = null;
+  function escapeHtml(str) {
+    return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   }
 
   // Global keyboard shortcuts
@@ -767,11 +775,6 @@
       e.preventDefault();
       const input = document.getElementById("nav-search-input");
       if (input) { input.focus(); input.select(); }
-    }
-    if (e.key === "Escape") {
-      removeSearchDropdown();
-      const input = document.getElementById("nav-search-input");
-      if (input) input.blur();
     }
   });
 
