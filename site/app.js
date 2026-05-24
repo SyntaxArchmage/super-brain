@@ -70,7 +70,7 @@
         <button class="lang-btn${lang === 'en' ? ' active' : ''}" data-lang="en">EN</button>
         <button class="lang-btn${lang === 'cn' ? ' active' : ''}" data-lang="cn">中文</button>
       </div>
-      <input type="search" class="nav-search" placeholder="${lang === 'cn' ? '搜索页面...' : 'Search pages...'}" id="nav-search-input" />
+      <input type="search" class="nav-search" placeholder="${lang === 'cn' ? '搜索 (Ctrl+K)...' : 'Search (Ctrl+K)...'}" id="nav-search-input" />
       <div class="nav-section-label">${lang === 'cn' ? '知识领域' : 'Knowledge Domains'}</div>
       <ul class="nav-tree">`;
 
@@ -107,6 +107,7 @@
     const searchInput = document.getElementById("nav-search-input");
     searchInput.addEventListener("input", (e) => {
       const q = e.target.value.toLowerCase();
+      // Filter nav items
       nav.querySelectorAll(".nav-page").forEach((el) => {
         const match = el.textContent.toLowerCase().includes(q);
         el.style.display = match || !q ? "" : "none";
@@ -115,6 +116,14 @@
         nav.querySelectorAll(".nav-children").forEach((el) => el.classList.add("open"));
         nav.querySelectorAll(".nav-domain").forEach((el) => el.classList.add("expanded"));
       }
+      // Full-text search results dropdown
+      showSearchResults(e.target.value);
+    });
+    searchInput.addEventListener("focus", () => {
+      if (searchInput.value.trim()) showSearchResults(searchInput.value);
+    });
+    searchInput.addEventListener("blur", (e) => {
+      setTimeout(() => removeSearchDropdown(), 200);
     });
   }
 
@@ -561,6 +570,210 @@
       });
     });
   }
+
+  // === Full-text Search Engine ===
+
+  function buildSearchIndex() {
+    const index = [];
+
+    for (const [id, page] of Object.entries(WIKI.pages)) {
+      if (page.type === "index") continue;
+      const title = t("pages", id, "title") || page.title;
+      const subtitle = t("pages", id, "subtitle") || page.subtitle || "";
+      const body = t("pages", id, "body") || page.body || "";
+      const plainBody = body.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+
+      index.push({
+        type: "page",
+        id: id,
+        title: title,
+        text: `${title} ${subtitle} ${plainBody}`,
+        subtitle: subtitle,
+        domain: page.domain || ""
+      });
+    }
+
+    if (WIKI.concepts) {
+      for (const [id, concept] of Object.entries(WIKI.concepts)) {
+        const name = t("concepts", id, "name") || concept.name;
+        const summary = t("concepts", id, "summary") || concept.summary || "";
+        const definition = t("concepts", id, "definition") || concept.definition || "";
+        const plainDef = definition.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+
+        index.push({
+          type: "concept",
+          id: id,
+          title: name,
+          text: `${name} ${summary} ${plainDef}`,
+          subtitle: summary,
+          pageLinks: concept.usedIn || []
+        });
+      }
+    }
+
+    return index;
+  }
+
+  function searchQuery(query, index) {
+    if (!query.trim()) return [];
+    const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
+    const results = [];
+
+    for (const entry of index) {
+      const text = entry.text.toLowerCase();
+      let score = 0;
+      let allMatch = true;
+
+      for (const term of terms) {
+        const titleLower = entry.title.toLowerCase();
+        if (titleLower === term) {
+          score += 100;
+        } else if (titleLower.includes(term)) {
+          score += 50;
+        } else if (text.includes(term)) {
+          score += 10;
+        } else {
+          // Fuzzy: allow 1 character difference for terms > 3 chars
+          if (term.length > 3 && fuzzyMatch(text, term)) {
+            score += 5;
+          } else {
+            allMatch = false;
+          }
+        }
+      }
+
+      if (allMatch && score > 0) {
+        results.push({ ...entry, score });
+      }
+    }
+
+    results.sort((a, b) => b.score - a.score);
+    return results.slice(0, 20);
+  }
+
+  function fuzzyMatch(text, term) {
+    for (let i = 0; i <= text.length - term.length; i++) {
+      let diffs = 0;
+      for (let j = 0; j < term.length; j++) {
+        if (text[i + j] !== term[j]) diffs++;
+        if (diffs > 1) break;
+      }
+      if (diffs <= 1) return true;
+    }
+    return false;
+  }
+
+  function getSnippet(text, query, maxLen = 120) {
+    const plain = text.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+    const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
+    const lower = plain.toLowerCase();
+
+    let bestPos = 0;
+    for (const term of terms) {
+      const idx = lower.indexOf(term);
+      if (idx !== -1) { bestPos = idx; break; }
+    }
+
+    const start = Math.max(0, bestPos - 30);
+    const end = Math.min(plain.length, start + maxLen);
+    let snippet = plain.slice(start, end).trim();
+    if (start > 0) snippet = "..." + snippet;
+    if (end < plain.length) snippet += "...";
+
+    // Highlight matching terms in snippet
+    for (const term of terms) {
+      const regex = new RegExp(`(${term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})`, "gi");
+      snippet = snippet.replace(regex, "<mark>$1</mark>");
+    }
+
+    return snippet;
+  }
+
+  let searchIndex = null;
+  let searchDropdown = null;
+
+  function initSearch() {
+    searchIndex = buildSearchIndex();
+  }
+
+  function showSearchResults(query) {
+    if (!searchIndex) initSearch();
+    removeSearchDropdown();
+
+    if (!query.trim()) return;
+
+    const results = searchQuery(query, searchIndex);
+    if (results.length === 0) {
+      const dd = createSearchDropdown();
+      dd.innerHTML = `<div class="search-empty">${lang === 'cn' ? '未找到结果' : 'No results found'}</div>`;
+      return;
+    }
+
+    const dd = createSearchDropdown();
+    let html = "";
+    for (const r of results) {
+      const icon = r.type === "page" ? "📄" : "💡";
+      const snippet = getSnippet(r.text, query);
+      const meta = r.type === "page" ? r.domain : (lang === 'cn' ? '概念' : 'Concept');
+      html += `<div class="search-result" data-type="${r.type}" data-id="${r.id}">`;
+      html += `<div class="search-result-header">`;
+      html += `<span class="search-result-icon">${icon}</span>`;
+      html += `<span class="search-result-title">${r.title}</span>`;
+      html += `<span class="search-result-meta">${meta}</span>`;
+      html += `</div>`;
+      html += `<div class="search-result-snippet">${snippet}</div>`;
+      html += `</div>`;
+    }
+    dd.innerHTML = html;
+
+    dd.querySelectorAll(".search-result").forEach((el) => {
+      el.addEventListener("click", () => {
+        const type = el.dataset.type;
+        const id = el.dataset.id;
+        removeSearchDropdown();
+        document.getElementById("nav-search-input").value = "";
+        if (type === "page") {
+          navigate(id);
+        } else {
+          // For concepts, navigate to the first page that uses it
+          const concept = WIKI.concepts?.[id];
+          if (concept?.usedIn?.length > 0) {
+            navigate(concept.usedIn[0]);
+          }
+        }
+      });
+    });
+  }
+
+  function createSearchDropdown() {
+    removeSearchDropdown();
+    const dd = document.createElement("div");
+    dd.className = "search-dropdown";
+    dd.id = "search-dropdown";
+    nav.appendChild(dd);
+    searchDropdown = dd;
+    return dd;
+  }
+
+  function removeSearchDropdown() {
+    const existing = document.getElementById("search-dropdown");
+    if (existing) existing.remove();
+    searchDropdown = null;
+  }
+
+  // Global keyboard shortcuts
+  document.addEventListener("keydown", (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === "k") {
+      e.preventDefault();
+      const input = document.getElementById("nav-search-input");
+      if (input) { input.focus(); input.select(); }
+    }
+    if (e.key === "Escape") {
+      removeSearchDropdown();
+      const input = document.getElementById("nav-search-input");
+      if (input) input.blur();
+    }
+  });
 
   // === Init ===
   navigate("index");
