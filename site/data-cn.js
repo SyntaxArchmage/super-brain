@@ -301,6 +301,20 @@ const WIKI_CN = {
       "summary": "操作的首选规范化挂钩：用现有值/属性替换操作，而不创建新的 IR。廉价简化的首选。",
       "definition": "Fold 是操作上的一种受限简化方法，可以 (1) 无操作，(2) 就地改变操作，或 (3) 返回现有值/属性来替换操作的结果。与 RewritePattern 不同，fold 无法创建新操作或 SSA 值。属性结果通过 DialectFoldInterface 实现为常量操作。 Fold 是规范化的首选 - 可在任何地方调用（OpBuilder::createOrFold、方言转换），而 RewritePattern 则处理结构更改。",
       "examples": "<pre>// Fold：arith.addi的不断折叠\n// 输入：%c1 = arith.constant 2 : i32\n// %c2 = arith.constant 3 : i32\n// %r = arith.addi %c1, %c2 : i32\n// 折叠返回：IntegerAttr(5) → 具体化为 arith.constant 5\n\n// 折叠与重写模式：\n// 折叠：x + 0 → return {x} （无新操作）\n// 模式：br ^bb1 当 ^bb1 是唯一的后继 → 擦除分支 + 合并块\n//（需要结构改变→必须使用RewritePattern）</pre>\n<p>规范化使用单个贪婪传递，运行所有方言的折叠方法和模式直到固定点。规则必须以低成本收敛——循环重写是错误。</p>"
+    },
+    "ods": {
+      "name": "消耗臭氧层物质",
+      "role": "框架",
+      "summary": "操作定义规范 — 基于 TableGen 的声明性系统，为操作、类型、属性、解析器、打印机和文档生成 C++。",
+      "definition": "ODS 是 MLIR 构建在 TableGen 上的声明层。开发人员无需为每个操作的构建器、验证器、解析器和打印机手动编写 C++，而是编写 .td 规范。 ODS 生成：访问器方法、汇编格式解析器/打印机、文档、字节码序列化和验证器逻辑。这是定义新方言的预期路径 - 可扩展方言 (DynamicOpDefinition) 为元编程场景提供了运行时替代方案。",
+      "examples": "<pre>// TableGen ODS 操作定义：\ndef MyOp : Op<MyDialect, \"my_op\", [纯，可交换]> {\n  让summary =“逐元素加法”；\n  让参数 = (ins AnyTensor:$lhs, AnyTensor:$rhs);\n  让结果 = (outs AnyTensor:$result);\n  让 assemblyFormat = [{\n    $lhs `,` $rhs attr-dict `:` 类型($结果)\n  }];\n  让 hasFolder = 1;\n  让 hasCanonicalizer = 1;\n}\n// 生成：带有 getLhs()、getRhs()、getResult() 的 MyOp 类\n// 解析器、打印机、验证器、文件夹存根、规范化注册</pre>\n<p>ODS 将内容（声明性规范）与方式（生成的 C++）分开，将典型操作的样板文件减少 80-90%。</p>"
+    },
+    "symbol-table": {
+      "name": "符号表",
+      "role": "容器",
+      "summary": "通过唯一性强制、查找和可见性控制来保存命名符号的操作。启用线程安全引用，无需 SSA 使用列表。",
+      "definition": "SymbolTable 是一个包含命名符号定义的操作（用 OpTrait::SymbolTable 标记）。符号通过名称 (SymbolRefAttr) 而不是 SSA 值引用，从而实现线程安全的并行编译 - 引用不会创建阻止并发修改的使用列表边缘。符号具有控制引用范围的可见性（公共/私有/嵌套）。双模型（全局名称的符号，本地数据的 SSA）是 MLIR 可以并行运行函数级传递的原因。",
+      "examples": "<pre>// module是一个包含函数符号的SymbolTable\n模块{\n  // @matmul 是一个符号（默认为公共）\n  func.func @matmul(%A: memref<8x8xf32>, %B: memref<8x8xf32>) { ... }\n\n  // @helper 是私有的（仅在此模块内可见）\n  func.func private @helper(%x: i32) -> i32 { ... }\n\n  // 通过SymbolRefAttr引用符号：\n  func.func @caller() {\n    %r = call @matmul(...) : ... // ← 符号引用\n    // 嵌套：@outer_module::@inner_func\n  }\n}</前>\n<p>符号没有 SSA 结果——它们只是被命名，而不是被赋值。当需要名称和地址时，方言会提供具体化器（例如 <code>llvm.mlir.addressof</code>）。</p>"
     }
   }
 };

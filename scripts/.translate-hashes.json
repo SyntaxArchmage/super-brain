@@ -159,5 +159,15 @@
   "concepts.fold.role": "addacb116bea8bfd9ae05f0c6399eb89",
   "concepts.fold.summary": "c381e781bc220c8047eaa859476ffcc9",
   "concepts.fold.definition": "925f94551af6b87c4e40ae51bba18647",
-  "concepts.fold.examples": "5f1f5c2fbf8ab4e5329745e8b793a003"
+  "concepts.fold.examples": "5f1f5c2fbf8ab4e5329745e8b793a003",
+  "concepts.ods.name": "03bca049e84ba7d10ef0e3ec7529f301",
+  "concepts.ods.role": "07782c22a88d1e82a09910124a9225a2",
+  "concepts.ods.summary": "9b2e07c04b33058c211be5b0d28c9dbb",
+  "concepts.ods.definition": "65caf43ba275190acc493ba0639eb770",
+  "concepts.ods.examples": "d1e1632769dd02241e89522c689b3395",
+  "concepts.symbol-table.name": "8f876a2fd3f1bcd3a16784ddd034f7da",
+  "concepts.symbol-table.role": "0e7278cda02a9c0446dcc75a4df34eb2",
+  "concepts.symbol-table.summary": "7a06af2fdc8e01c2fc9d48dd4b381cb3",
+  "concepts.symbol-table.definition": "82d13ff7e3b180d796cf2e5ff7a1a2aa",
+  "concepts.symbol-table.examples": "2b546daa541f1be595b7c1edfce3dc48"
 }
