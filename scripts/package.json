@@ -6,5 +6,8 @@
   "scripts": {
     "translate": "node translate.js",
     "translate:dry": "node translate.js --dry-run"
+  },
+  "dependencies": {
+    "@yxw007/translate": "^1.5.0"
   }
 }

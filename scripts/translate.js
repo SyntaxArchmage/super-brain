@@ -1,16 +1,13 @@
 #!/usr/bin/env node
 /**
- * Translates data.js (EN) → data-cn.js (CN) using an LLM API.
+ * Translates data.js (EN) → data-cn.js (CN) using Google Translate (free, no API key).
  * Only re-translates fields whose content hash has changed.
  *
  * Usage:
- *   TRANSLATE_API_KEY=sk-... node translate.js
+ *   node translate.js
  *   node translate.js --dry-run
  *
- * Env vars:
- *   TRANSLATE_API_KEY  — OpenAI API key (required unless --dry-run)
- *   TRANSLATE_MODEL    — model name (default: gpt-4o-mini)
- *   TRANSLATE_BASE_URL — custom API base URL (optional, for compatible providers)
+ * Zero API keys required. Uses Google Translate via @yxw007/translate.
  */
 
 import { createHash } from "node:crypto";
@@ -25,14 +22,6 @@ const DATA_CN_PATH = resolve(SITE_DIR, "data-cn.js");
 const HASH_PATH = resolve(__dirname, ".translate-hashes.json");
 
 const DRY_RUN = process.argv.includes("--dry-run");
-const MODEL = process.env.TRANSLATE_MODEL || "gpt-4o-mini";
-const API_KEY = process.env.TRANSLATE_API_KEY;
-const BASE_URL = process.env.TRANSLATE_BASE_URL || undefined;
-
-if (!DRY_RUN && !API_KEY) {
-  console.error("Error: TRANSLATE_API_KEY env var is required (or use --dry-run)");
-  process.exit(1);
-}
 
 function md5(str) {
   return createHash("md5").update(str).digest("hex");
@@ -100,63 +89,99 @@ function findChangedFields(fields, hashes) {
   return changed;
 }
 
-const SYSTEM_PROMPT = `You are a professional technical translator for a personal knowledge wiki about compilers, AI infrastructure, high-performance computing, and programming language theory.
+/**
+ * Strip HTML tags for translation, then restore them.
+ * For fields containing HTML (body, examples), we translate text content only.
+ */
+function stripHtmlForTranslation(html) {
+  const tokens = [];
+  let idx = 0;
+  const regex = /(<[^>]+>|<\/[^>]+>)/g;
+  let match;
+  let lastEnd = 0;
 
-Rules:
-- Translate English to natural, idiomatic Simplified Chinese suitable for a Chinese software engineer audience.
-- Preserve ALL HTML tags, attributes, code blocks (<pre>, <code>), and their contents EXACTLY unchanged.
-- Preserve technical terms that are universally used in English: MLIR, LLVM, SSA, IR, TensorFlow, XLA, HLO, CUDA, GPU, CPU, API, etc.
-- For terms that have well-known Chinese translations, use them: compiler=编译器, optimization=优化, abstraction=抽象, etc.
-- Keep proper nouns (project names, people names) unchanged.
-- Output ONLY the translated text, no explanations or markdown wrappers.`;
+  while ((match = regex.exec(html)) !== null) {
+    if (match.index > lastEnd) {
+      tokens.push({ type: "text", value: html.slice(lastEnd, match.index) });
+    }
+    tokens.push({ type: "tag", value: match[0] });
+    lastEnd = regex.lastIndex;
+  }
+  if (lastEnd < html.length) {
+    tokens.push({ type: "text", value: html.slice(lastEnd) });
+  }
+
+  return tokens;
+}
+
+async function translateText(text, translator) {
+  if (!text.trim()) return text;
+  // Preserve leading/trailing whitespace
+  const leadingWs = text.match(/^(\s*)/)[0];
+  const trailingWs = text.match(/(\s*)$/)[0];
+  const trimmed = text.trim();
+  if (!trimmed) return text;
+
+  try {
+    const result = await translator.translate(trimmed, { from: "en", to: "zh" });
+    if (typeof result === "string") return leadingWs + result + trailingWs;
+    if (Array.isArray(result)) return leadingWs + result[0] + trailingWs;
+    return text;
+  } catch {
+    return text;
+  }
+}
+
+async function translateHtml(html, translator) {
+  const tokens = stripHtmlForTranslation(html);
+  const results = [];
+
+  for (const token of tokens) {
+    if (token.type === "tag") {
+      results.push(token.value);
+    } else {
+      // Skip code content inside <pre> or <code>
+      const lastTag = results.join("").match(/<(pre|code)[^>]*>(?!.*<\/\1>)/is);
+      if (lastTag) {
+        results.push(token.value);
+      } else {
+        results.push(await translateText(token.value, translator));
+      }
+    }
+  }
+
+  return results.join("");
+}
+
+async function translateField(field, translator) {
+  const isHtml = field.value.includes("<") && (
+    field.key.endsWith(".body") ||
+    field.key.endsWith(".examples") ||
+    field.key.endsWith(".definition")
+  );
+
+  if (isHtml) {
+    return await translateHtml(field.value, translator);
+  }
+  return await translateText(field.value, translator);
+}
 
 async function translateBatch(fields) {
-  const baseURL = BASE_URL || "https://api.openai.com/v1";
+  const { translator, engines } = await import("@yxw007/translate");
+  translator.addEngine(engines.google);
+
   const results = [];
-  const BATCH_SIZE = 5;
 
-  for (let i = 0; i < fields.length; i += BATCH_SIZE) {
-    const batch = fields.slice(i, i + BATCH_SIZE);
-    const prompt = batch.map((f, idx) =>
-      `--- FIELD ${idx + 1} [${f.key}] ---\n${f.value}`
-    ).join("\n\n");
+  for (let i = 0; i < fields.length; i++) {
+    const f = fields[i];
+    console.log(`  [${i + 1}/${fields.length}] ${f.key} (${f.value.length} chars)...`);
 
-    const userMsg = `Translate each field below to Simplified Chinese. Return the translations in the same order, separated by the same "--- FIELD N [key] ---" delimiters. Keep code blocks and HTML tags unchanged.\n\n${prompt}`;
+    const translated = await translateField(f, translator);
+    results.push({ key: f.key, hash: f.hash, translated });
 
-    console.log(`  Translating batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(fields.length / BATCH_SIZE)} (${batch.length} fields)...`);
-
-    const resp = await fetch(`${baseURL}/chat/completions`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${API_KEY}`
-      },
-      body: JSON.stringify({
-        model: MODEL,
-        messages: [
-          { role: "system", content: SYSTEM_PROMPT },
-          { role: "user", content: userMsg }
-        ],
-        temperature: 0.3,
-        max_tokens: 16000
-      })
-    });
-
-    if (!resp.ok) {
-      const errBody = await resp.text();
-      throw new Error(`API request failed (${resp.status}): ${errBody}`);
-    }
-
-    const data = await resp.json();
-    const text = data.choices[0].message.content;
-    const parts = text.split(/---\s*FIELD\s+\d+\s*\[.*?\]\s*---/).filter(s => s.trim());
-
-    for (let j = 0; j < batch.length; j++) {
-      results.push({
-        key: batch[j].key,
-        hash: batch[j].hash,
-        translated: (parts[j] || "").trim()
-      });
+    // Small delay to avoid rate limiting
+    if (i < fields.length - 1) {
+      await new Promise(r => setTimeout(r, 200));
     }
   }
 
@@ -174,7 +199,6 @@ function buildCNObject(wiki, translations) {
   const txMap = {};
   for (const t of translations) { txMap[t.key] = t.translated; }
 
-  // Rebuild taxonomy translations
   const taxonomyCN = [];
   for (const domain of wiki.taxonomy) {
     const domainCN = {
@@ -224,19 +248,19 @@ function serializeCN(cn) {
 }
 
 async function main() {
-  console.log("🔍 Loading data.js...");
+  console.log("Loading data.js...");
   const wiki = loadWiki();
   const hashes = loadHashes();
 
-  console.log("📝 Extracting translatable fields...");
+  console.log("Extracting translatable fields...");
   const fields = extractTranslatableFields(wiki);
-  console.log(`   Found ${fields.length} translatable fields.`);
+  console.log(`  Found ${fields.length} translatable fields.`);
 
   const changed = findChangedFields(fields, hashes);
-  console.log(`   ${changed.length} field(s) need translation.`);
+  console.log(`  ${changed.length} field(s) need translation.`);
 
   if (changed.length === 0) {
-    console.log("✅ Nothing to translate — data-cn.js is up to date.");
+    console.log("Nothing to translate — data-cn.js is up to date.");
     return;
   }
 
@@ -248,21 +272,20 @@ async function main() {
     return;
   }
 
-  console.log("\n🌐 Translating via LLM...");
+  console.log("\nTranslating via Google Translate (free, no API key)...");
   const translations = await translateBatch(changed);
 
-  console.log("\n📦 Building data-cn.js...");
+  console.log("\nBuilding data-cn.js...");
   const cn = buildCNObject(wiki, translations);
   const output = serializeCN(cn);
   writeFileSync(DATA_CN_PATH, output, "utf-8");
-  console.log(`   Written to ${DATA_CN_PATH} (${output.length} bytes)`);
+  console.log(`  Written to ${DATA_CN_PATH} (${output.length} bytes)`);
 
-  // Update hashes
   for (const t of translations) {
     if (t.translated) hashes[t.key] = t.hash;
   }
   saveHashes(hashes);
-  console.log("✅ Done.");
+  console.log("Done.");
 }
 
 main().catch(err => {
