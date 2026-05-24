@@ -287,6 +287,20 @@ const WIKI_CN = {
       "summary": "DAG 到 DAG 重写规则的基类。两阶段：匹配然后变异。所有 IR 更改都通过 PatternRewriter。",
       "definition": "RewritePattern 定义单个转换规则：可选的根操作类型、静态收益分数和 matchAndRewrite 方法。匹配阶段在不修改 IR 的情况下检查适用性。匹配时，重写阶段通过 PatternRewriter API（从不直接）改变 IR。模式被收集到 RewritePatternSets 中并由驱动程序应用（贪婪定点、单遍遍历或转换）。",
       "examples": "<pre>// 折叠 x + 0 → x 的规范化模式：\n结构 AddZeroElim : public OpRewritePattern<arith::AddIOp> {\n  使用 OpRewritePattern::OpRewritePattern；\n\n  LogicalResult matchAndRewrite(arith::AddIOp op,\n                                PatternRewriter &rewriter) const override {\n    // 匹配：检查 RHS 是否为常量 0\n    APIt 值；\n    if (!matchPattern(op.getRhs(), m_ConstantInt(&value)) || !value.isZero())\n      返回失败();\n\n    // 重写：替换为LHS（必须经过重写器）\n    rewriter.replaceOp(op, op.getLhs());\n    返回成功（）；\n  }\n};</pre>\n<p>关键规则：(1) 变异前匹配，(2) 根操作必须被替换/删除/更新，(3) 永远不会绕过重写器，(4) 好处是静态的 - 使用多种模式来实现动态成本。</p>"
+    },
+    "bufferization": {
+      "name": "缓冲化",
+      "role": "转型",
+      "summary": "将张量（值语义）IR 转换为 memref（副作用缓冲区）IR。确定在何处分配内存以及在何处需要副本。",
+      "definition": "缓冲是张量→memref 转换：它将不可变的值语义张量操作转换为具有显式内存分配的副作用缓冲区（memref）操作。 One-Shot Bufferize 执行整体功能分析，以最大化就地写入（将输入缓冲区重新用于输出），并且仅在写入后读取冲突迫使其插入副本的情况下。目的地传递风格 (DPS)——操作声明“out”操作数——为就地重用提供缓冲锚点。",
+      "examples": "<pre>// 缓冲之前（张量-值语义）：\n%0 = linalg.matmul ins(%A, %B : 张量<8x8xf32>, 张量<8x8xf32>)\n                   outs(%C : 张量<8x8xf32>) -> 张量<8x8xf32>\n// ↑ DPS: 'outs' 是缓冲锚点\n\n// 缓冲后（memref — 副作用）：\nlinalg.matmul ins(%A_buf, %B_buf : memref<8x8xf32>, memref<8x8xf32>)\n              outs(%C_buf : memref<8x8xf32>)\n// %C_buf 可以别名 %C 的原始缓冲区（就地）或新分配\n// 取决于冲突分析</pre>\n<p>关键见解：缓冲≠降低≠释放。这些是单独的管道阶段。非 DPS 张量操作总是分配； DPS 操作可以重用其目标缓冲区。</p>"
+    },
+    "fold": {
+      "name": "折叠",
+      "role": "局部简化",
+      "summary": "操作的首选规范化挂钩：用现有值/属性替换操作，而不创建新的 IR。廉价简化的首选。",
+      "definition": "Fold 是操作上的一种受限简化方法，可以 (1) 无操作，(2) 就地改变操作，或 (3) 返回现有值/属性来替换操作的结果。与 RewritePattern 不同，fold 无法创建新操作或 SSA 值。属性结果通过 DialectFoldInterface 实现为常量操作。 Fold 是规范化的首选 - 可在任何地方调用（OpBuilder::createOrFold、方言转换），而 RewritePattern 则处理结构更改。",
+      "examples": "<pre>// Fold：arith.addi的不断折叠\n// 输入：%c1 = arith.constant 2 : i32\n// %c2 = arith.constant 3 : i32\n// %r = arith.addi %c1, %c2 : i32\n// 折叠返回：IntegerAttr(5) → 具体化为 arith.constant 5\n\n// 折叠与重写模式：\n// 折叠：x + 0 → return {x} （无新操作）\n// 模式：br ^bb1 当 ^bb1 是唯一的后继 → 擦除分支 + 合并块\n//（需要结构改变→必须使用RewritePattern）</pre>\n<p>规范化使用单个贪婪传递，运行所有方言的折叠方法和模式直到固定点。规则必须以低成本收敛——循环重写是错误。</p>"
     }
   }
 };

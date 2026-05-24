@@ -149,5 +149,15 @@
   "concepts.rewrite-pattern.role": "08b06111f764621253b82737799fba21",
   "concepts.rewrite-pattern.summary": "51c4477c2e7d4e1c128c905d8055a25c",
   "concepts.rewrite-pattern.definition": "05debe6fcef017ec55362ad46bbef82e",
-  "concepts.rewrite-pattern.examples": "80292755cbc780d3094f26ec65af34d4"
+  "concepts.rewrite-pattern.examples": "80292755cbc780d3094f26ec65af34d4",
+  "concepts.bufferization.name": "4c99eed42e07ff9a09bb93fb8c5c2223",
+  "concepts.bufferization.role": "7793401b28a8b98f7f4ccce3a07c17df",
+  "concepts.bufferization.summary": "909db16cf85a6bbfa3e66e915d0b3b37",
+  "concepts.bufferization.definition": "a95489bbd5142da852741bbee2c5b95b",
+  "concepts.bufferization.examples": "28ba3b8272e61b6070338595916a2bf3",
+  "concepts.fold.name": "7b0da812abcd107490aeb0aa803c9cfe",
+  "concepts.fold.role": "addacb116bea8bfd9ae05f0c6399eb89",
+  "concepts.fold.summary": "c381e781bc220c8047eaa859476ffcc9",
+  "concepts.fold.definition": "925f94551af6b87c4e40ae51bba18647",
+  "concepts.fold.examples": "5f1f5c2fbf8ab4e5329745e8b793a003"
 }
