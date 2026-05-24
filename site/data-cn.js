@@ -193,8 +193,8 @@ const WIKI_CN = {
     "pass": {
       "name": "经过",
       "role": "转型",
-      "summary": "运营范围的转型。嵌套通道管理器镜像 IR 嵌套。不得在锚定范围之外发生变异。",
-      "definition": "MLIR 中的传递是对特定操作类型（其“锚点”）进行操作的转换。传递不得检查或改变锚点操作的区域树之外的任何内容。此范围规则支持并行性：独立操作的传递可以同时运行。",
+      "summary": "操作范围的转换步骤。线程安全，可复制构造。在特定嵌套级别运行。通过通道管理器形成管道。",
+      "definition": "Pass 是对特定操作类型（其“锚点”）进行操作的编译工作单元。关键不变量：（1）只能修改嵌套在当前操作下的操作； (2) 必须是可复制构造的，无交叉调用状态（启用并行执行）； (3) 管道一次运行一次操作，而不是一次传递一次 — 所有传递都在 func₁ 上运行，然后全部在 func2 上运行。通道声明依赖方言（用于线程安全预加载），通过 getAnalysis<> 进行查询分析，并发出失败信号以中止管道。",
       "examples": "<pre>//传递管道结构（镜像IR嵌套）：\n// mlir-opt input.mlir -pass-pipeline='\n// 内置模块(\n// func.func(\n// 规范化，← 在每个 func.func 上运行\n// cse ← 在每个 func.func 上运行\n// ),\n// 内联，← 在模块上运行\n// func.func(\n// 将 linalg 转换为循环 ← 降低通道\n// )\n// )'\n\n// 嵌套结构的意思是：\n// 1. canonicalize + cse 在每个函数内部运行\n// 2. 在模块级别内联运行（可以看到所有函数）\n// 3. linalg-to-loops 在内联后在每个函数内部运行</pre>\n<p>通道管理器公开时序 (<code>-mlir-timing</code>) 和 IR 快照 (<code>-mlir-print-ir-after-all</code>) - 这些是管道可视化的自然数据源。</p>"
     },
     "lowering": {
@@ -266,6 +266,27 @@ const WIKI_CN = {
       "summary": "SSACFG 块中的最后一个操作，用于指定控制流后继者或将控制权返回给父操作。",
       "definition": "在 SSACFG 区域中，每个块必须以终止符操作结束 - 具有 IsTerminator 特征的操作，指定哪些块控制权转移到（后继者）或将值返回到父操作。示例：cf.br（无条件分支）、cf.cond_br（条件）、func.return、scf.yield。终止符将块参数传递给后继者，实现替换 phi 节点的并行复制语义。",
       "examples": "<pre>func.func @terminators(%cond: i1, %val: i64) -> i64 {\n^条目：\n  // cf.cond_br 是一个有两个后继者的终止符\n  cf.cond_br %cond, ^then(%val: i64), ^else(%val: i64)\n\n^然后(%a: i64):\n  %doubled = arith.muli %a, %a : i64\n  // cf.br 是一个有一个后继者的终止符\n  cf.br ^合并（％双倍：i64）\n\n^其他（%b：i64）：\n  参见 br ^合并(%b: i64)\n\n^合并（％结果：i64）：\n  // func.return 是退出函数的终止符\n  返回%结果：i64\n}</前>\n<p><code>NoTerminator</code> 特征使区域免受此要求（例如，<code>module</code> 主体）。没有终止符，就没有控制流——对于声明容器很有用。</p>"
+    },
+    "conversion-target": {
+      "name": "转化目标",
+      "role": "合法性合同",
+      "summary": "方言转换后哪些操作/方言合法的正式规范。降低的成功标准。",
+      "definition": "ConversionTarget 声明转换中每个操作的合法性状态：合法（始终正常）、动态合法（如果回调通过则正常）、非法（必须重写）或未知。仅当所有输出 IR 满足目标的合法性约束时，转换驱动程序才会成功。这种形式化可以实现部分降低（留下未知数）、完全降低（一切都必须合法化）和分析模式（无需更改的试运行）。",
+      "examples": "<pre>// 设置转换目标：\nConversionTarget 目标(getContext());\n\n// 将整个方言标记为合法（输出可能包含算术操作）\ntarget.addLegalDialect<arith::ArithDialect>();\n\n// 将特定操作标记为非法（必须降低）\ntarget.addIllegalOp<linalg::MatmulOp>();\n\n// 动态合法性：只有32位arith.addi是合法的\ntarget.addDynamicallyLegalOp<arith::AddIOp>([](arith::AddIOp op) {\n  return op.getType().isInteger(32);\n});\n\n// 应用转换：成功当且仅当重写所有非法操作\n如果（失败（applyPartialConversion（模块，目标，模式）））\n  signalPassFailure();</pre>\n<p>目标驱动降低的<em>内容</em>；模式驱动<em>如何</em>。它们与 TypeConverter 一起构成了方言转换三元组。</p>"
+    },
+    "type-converter": {
+      "name": "类型转换器",
+      "role": "类型映射",
+      "summary": "在方言转换期间映射类型并生成具体化 IR 以桥接转换后的代码和未转换的代码之间的类型不匹配。",
+      "definition": "TypeConverter 注册类型转换规则（1 对 1 或 1 对 N 映射）和生成 IR 以桥接类型间隙的具体化回调。源具体化将转换后的值转换回原始类型，以供未转换的用户使用；目标具体化转换为模式期望的类型。这使得渐进式类型转换成为可能，其中并非所有操作都同时重写。",
+      "examples": "<pre>// 映射索引 → i64 的 TypeConverter:\n类 MyTypeConverter : 公共 TypeConverter {\n  我的类型转换器() {\n    addConversion([](IndexType t) { return IntegerType::get(ctx, 64); });\n    // 物化：需要时插入index_cast\n    addSourceMaterialization([](OpBuilder &b, IndexType t,\n                                值范围输入，位置 loc) {\n      return b.create<arith::IndexCastOp>(loc, t, inputs[0]).getResult();\n    });\n  }\n};</pre>\n<p>如果没有 TypeConverter，操作数类型将保持不变。其一，框架会自动重新映射 ConversionPatterns 中的操作数，并插入 <code>unrealized_conversion_cast</code> 作为后备桥。</p>"
+    },
+    "rewrite-pattern": {
+      "name": "重写模式",
+      "role": "变换单位",
+      "summary": "DAG 到 DAG 重写规则的基类。两阶段：匹配然后变异。所有 IR 更改都通过 PatternRewriter。",
+      "definition": "RewritePattern 定义单个转换规则：可选的根操作类型、静态收益分数和 matchAndRewrite 方法。匹配阶段在不修改 IR 的情况下检查适用性。匹配时，重写阶段通过 PatternRewriter API（从不直接）改变 IR。模式被收集到 RewritePatternSets 中并由驱动程序应用（贪婪定点、单遍遍历或转换）。",
+      "examples": "<pre>// 折叠 x + 0 → x 的规范化模式：\n结构 AddZeroElim : public OpRewritePattern<arith::AddIOp> {\n  使用 OpRewritePattern::OpRewritePattern；\n\n  LogicalResult matchAndRewrite(arith::AddIOp op,\n                                PatternRewriter &rewriter) const override {\n    // 匹配：检查 RHS 是否为常量 0\n    APIt 值；\n    if (!matchPattern(op.getRhs(), m_ConstantInt(&value)) || !value.isZero())\n      返回失败();\n\n    // 重写：替换为LHS（必须经过重写器）\n    rewriter.replaceOp(op, op.getLhs());\n    返回成功（）；\n  }\n};</pre>\n<p>关键规则：(1) 变异前匹配，(2) 根操作必须被替换/删除/更新，(3) 永远不会绕过重写器，(4) 好处是静态的 - 使用多种模式来实现动态成本。</p>"
     }
   }
 };
