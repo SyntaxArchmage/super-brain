@@ -57,7 +57,7 @@ const WIKI = {
       type: "article",
       meta: [
         { text: "Primary sources: 36 official documents", dot: "#2563eb" },
-        { text: "Concepts: 31 entities" },
+        { text: "Concepts: 33 entities" },
         { text: "Cross-references: 4 pages" }
       ],
       body: `
@@ -1734,6 +1734,68 @@ mlir-opt output.mlirbc  // reads back, prints textual</pre>
       usedIn: ["mlir", "compiler-ai-infra"],
       sources: [
         { label: "MLIR Bytecode Format", url: "https://mlir.llvm.org/docs/BytecodeFormat/" }
+      ]
+    },
+    mlirContext: {
+      name: "MLIRContext",
+      role: "Runtime Root",
+      summary: "Top-level arena and registry for an MLIR instance — owns dialect loading, type/attribute uniquing, diagnostics, action dispatch, and threading configuration.",
+      definition: "MLIRContext is the global environment in which all MLIR work happens. Dialects must be loaded into a context before their operations, types, or attributes can be instantiated. Passes declare dependent dialects so the context is ready before multi-threaded pipelines run. The context also hosts the DiagnosticEngine, Action tracing handlers, and threading mode (multi-thread by default, single-thread for debugging). Unlike Operation/Value (IR nodes), MLIRContext does not appear in .mlir text but is always present in C++ and C API code as the first thing created.",
+      examples: `<pre>// Create context and load dialects:
+MLIRContext context;
+context.loadDialect<arith::ArithDialect, func::FuncDialect>();
+
+// Build IR in that context:
+OpBuilder builder(&context);
+ModuleOp module = builder.create<ModuleOp>(UnknownLoc::get(&context));
+
+// Passes receive context at initialize time:
+void MyPass::initialize(MLIRContext *ctx) {
+  RewritePatternSet patterns(ctx);
+  populateMyPatterns(patterns);
+}
+
+// Threading control for debugging:
+context.disableMultithreading();  // deterministic Action/Diagnostic order
+context.enableMultithreading();</pre>
+<p>Every IR object is uniqued per-context. Two contexts produce incompatible IR — you cannot mix Operations from different contexts.</p>`,
+      related: ["Dialect", "DiagnosticEngine", "Action", "Pass", "Attribute"],
+      usedIn: ["mlir", "ir-design", "compiler-ai-infra"],
+      sources: [
+        { label: "Toy Tutorial Ch-2: Emitting MLIR", url: "https://mlir.llvm.org/docs/Tutorials/Toy/Ch-2/" }
+      ]
+    },
+    opBuilder: {
+      name: "OpBuilder",
+      role: "IR Constructor",
+      summary: "Stateful API for creating operations, types, and attributes at a chosen insertion point — the construction counterpart to Operation traversal.",
+      definition: "OpBuilder wraps an MLIRContext and tracks an insertion point (a Block and iterator). create<SomeOp>(...) allocates and links a new Operation into the block; helper methods build common types (getF32Type, getIndexType) and attributes (getI64IntegerAttr). ODS-generated build() methods take an OpBuilder and OperationState. PatternRewriter extends OpBuilder with rewrite bookkeeping (replaceOp, eraseOp, notifyRootUpdate). You traverse existing IR via Operation/Region/Block; you emit new IR via OpBuilder.",
+      examples: `<pre>// Frontend emission (e.g. Toy language → MLIR):
+OpBuilder builder(&context);
+builder.setInsertionPointToStart(entryBlock);
+Value c = builder.create<arith::ConstantOp>(loc,
+    builder.getF32FloatAttr(1.0));
+builder.create<func::ReturnOp>(loc, c);
+
+// Inside a RewritePattern (PatternRewriter extends OpBuilder):
+LogicalResult matchAndRewrite(AddOp op,
+                              PatternRewriter &rewriter) const override {
+  Value lhs = op.getLhs();
+  // Replace with new op at same location:
+  rewriter.replaceOpWithNewOp<OptimizedAddOp>(op, lhs, op.getRhs());
+  return success();
+}
+
+// Dialect constant materialization hook:
+Operation *MyDialect::materializeConstant(
+    OpBuilder &builder, Attribute value, Type type, Location loc) {
+  return builder.create<MyConstOp>(loc, cast<MyAttr>(value), type);
+}</pre>
+<p>Key insight: never create Operations directly — always go through OpBuilder/PatternRewriter so listeners (tracing, undo) stay informed.</p>`,
+      related: ["Operation", "Value", "Block", "ODS", "RewritePattern"],
+      usedIn: ["mlir", "ir-design", "parser-practice"],
+      sources: [
+        { label: "MLIR OpBuilder API", url: "https://mlir.llvm.org/docs/Tutorials/Toy/Ch-2/" }
       ]
     }
   }
