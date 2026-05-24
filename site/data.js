@@ -56,8 +56,8 @@ const WIKI = {
       domain: "Compiler Infrastructure",
       type: "article",
       meta: [
-        { text: "Primary sources: 7 official documents", dot: "#2563eb" },
-        { text: "Concepts: 8 entities" },
+        { text: "Primary sources: 36 official documents", dot: "#2563eb" },
+        { text: "Concepts: 17 entities" },
         { text: "Cross-references: 4 pages" }
       ],
       body: `
@@ -181,6 +181,11 @@ Operation → operands (Value list)</pre>
         { name: "Region", role: "Structure", summary: "Ordered blocks owned by an operation. Semantics (SSACFG or Graph) depend on the containing operation, not the region itself." },
         { name: "Block", role: "Structure", summary: "Sequential operation list with typed block arguments. CFG terminators target blocks. Block arguments replace phi nodes." },
         { name: "Dialect", role: "Namespace", summary: "Extension mechanism grouping operations, types, attributes under a namespace. Multiple dialects coexist; conversion between them is explicit." },
+        { name: "Attribute", role: "Core entity", summary: "Compile-time constant data on operations. Inherent (required by semantics) vs discardable (externally-attached metadata)." },
+        { name: "Trait", role: "Mechanism", summary: "Static verification constraints enabling passes to reason about operations generically. Solves the ops × passes scaling problem." },
+        { name: "Interface", role: "Mechanism", summary: "Abstract behavioral contracts operations implement. Enables generic transforms across dialects without per-op hardcoding." },
+        { name: "Terminator", role: "Structure", summary: "Last op in an SSACFG block specifying control-flow successors. Implements parallel-copy semantics via block arguments." },
+        { name: "Graph Region", role: "Structure", summary: "Region kind for dataflow graphs: operation order not semantic, values can form cycles, enables ML framework IR modeling." },
         { name: "Symbol", role: "Scope", summary: "Named operation in a symbol table. Referenced via SymbolRefAttr for cross-scope access that SSA dominance cannot express." },
         { name: "Pass", role: "Transformation", summary: "Operation-scoped transformation. Nested pass managers mirror IR nesting. Must not mutate outside anchor scope." },
         { name: "Lowering", role: "Transformation", summary: "Progressive movement toward lower abstraction. Distinct from conversion (same level) and translation (leaving MLIR)." }
@@ -1125,6 +1130,143 @@ for (int i = 0; i < N; i++)
       related: ["Cache line", "Memory Hierarchy"],
       usedIn: ["memory-hierarchy"],
       sources: []
+    },
+    attribute: {
+      name: "Attribute",
+      role: "Core entity",
+      summary: "Compile-time constant data attached to operations. Split into inherent (verified by op) and discardable (externally-attached metadata).",
+      definition: "Attributes represent constant compile-time data in MLIR. Every operation has an attribute dictionary mapping identifier keys to attribute values. Inherent attributes are required by the operation's semantics (e.g., the comparison predicate of arith.cmpi). Discardable attributes use dialect-prefixed names and can be attached/removed without affecting operation semantics (e.g., gpu.container_module). MLIR is migrating inherent attributes to Properties — a separate storage mechanism shown as <{...}> in textual IR.",
+      examples: `<pre>// Inherent attribute (required by the op):
+%cmp = arith.cmpi "slt", %a, %b : i64
+//                 ↑ predicate is an inherent attribute
+
+// Discardable attributes (metadata, removable):
+func.func @kernel() attributes {
+  gpu.container_module,     // ← discardable (dialect-prefixed)
+  llvm.linkage = "internal" // ← discardable
+} { ... }
+
+// Properties (new syntax, replacing some inherent attrs):
+"test.op"() <{fruit = "banana"}> {discardable_attr = 3} : () -> ()
+//           ↑ properties         ↑ attr dictionary</pre>
+<p>The distinction matters: inherent attributes define the operation, discardable attributes annotate it. Passes that strip metadata can remove all discardable attributes safely.</p>`,
+      related: ["Operation", "Dialect", "Property"],
+      usedIn: ["mlir", "ir-design"],
+      sources: [
+        { label: "MLIR LangRef — Attributes", url: "https://mlir.llvm.org/docs/LangRef/#attributes" }
+      ]
+    },
+    trait: {
+      name: "Trait",
+      role: "Mechanism",
+      summary: "Static verification constraints on operations that enable passes to reason about ops generically without knowing every dialect.",
+      definition: "Traits are compile-time attributes of an operation that describe structural or semantic invariants. They solve MLIR's scalability challenge: with arbitrary ops and arbitrary passes, each pass cannot hardcode knowledge of every operation. Instead, traits like IsolatedFromAbove (no upward value capture) or NoTerminator (region doesn't require a terminator) let passes verify and transform IR using abstract properties rather than operation-specific logic.",
+      examples: `<pre>// IsolatedFromAbove: values from outer regions cannot be used
+func.func @outer() {
+  %x = arith.constant 42 : i32
+  // Inner region cannot directly use %x:
+  "isolated_op"() ({
+    // %x is NOT available here due to IsolatedFromAbove
+    %y = arith.constant 0 : i32
+    "inner.use"(%y) : (i32) -> ()
+  }) : () -> ()
+}
+
+// NoTerminator: module body doesn't need a terminator
+module {
+  func.func @a() { ... }
+  func.func @b() { ... }
+  // No 'return' or branch needed at end
+}</pre>
+<p>Key traits: <code>IsolatedFromAbove</code> (region isolation), <code>SingleBlock</code> (exactly one block), <code>NoTerminator</code> (optional terminator), <code>SymbolTable</code> (contains named symbols), <code>Commutative</code> (operand order irrelevant).</p>`,
+      related: ["Operation", "Interface", "Pass"],
+      usedIn: ["mlir", "ir-design"],
+      sources: [
+        { label: "MLIR Traits Documentation", url: "https://mlir.llvm.org/docs/Traits/" }
+      ]
+    },
+    interface: {
+      name: "Interface",
+      role: "Mechanism",
+      summary: "Abstract behavioral contracts that operations implement, enabling passes to work generically across dialects.",
+      definition: "Interfaces are the dynamic counterpart to Traits. While traits express static properties (verified at compile-time), interfaces define behavioral contracts that operations can implement at runtime. For example, RegionKindInterface tells the system whether a region uses SSACFG or graph semantics. InliningInterface enables generic inlining without hardcoding per-dialect logic. This solves the O(ops × passes) scaling problem by decoupling transformation logic from operation knowledge.",
+      examples: `<pre>// An operation implementing InferTypeOpInterface:
+// The framework can infer result types automatically.
+%result = "mydialect.add"(%a, %b) : (tensor<4xf32>, tensor<4xf32>) -> tensor<4xf32>
+// ↑ Result type inferred from operand types via interface
+
+// RegionKindInterface — declares region semantics:
+// SSACFG: blocks have terminators, dominance applies
+// Graph:  single block, operation order not semantic
+
+// Side-effect interface — declares memory effects:
+// Allows dead-code elimination, reordering, etc.
+func.func @pure(%x: i32) -> i32 {
+  %y = arith.addi %x, %x : i32  // No side effects → movable
+  return %y : i32
+}</pre>
+<p>Core interfaces: <code>RegionKindInterface</code>, <code>InliningInterface</code>, <code>InferTypeOpInterface</code>, <code>MemoryEffectsOpInterface</code>, <code>SymbolOpInterface</code>.</p>`,
+      related: ["Trait", "Pass", "Dialect"],
+      usedIn: ["mlir", "ir-design"],
+      sources: [
+        { label: "MLIR Interfaces Documentation", url: "https://mlir.llvm.org/docs/Interfaces/" }
+      ]
+    },
+    "graph-region": {
+      name: "Graph Region",
+      role: "Structure",
+      summary: "A region kind for dataflow/concurrent graphs where operation order is not semantic and values can form cycles.",
+      definition: "In a graph region, operations within the single block have no inherent execution order. The runtime or lowering determines scheduling. Values can reference operations defined later (forward references), enabling cyclic dataflow graphs. This contrasts with SSACFG regions where block ordering and terminators define control flow. High-level ML framework graphs (like TensorFlow's) naturally map to graph regions.",
+      examples: `<pre>// Graph region: operations can reference each other cyclically
+"test.graph_region"() ({
+  %1 = "op1"(%1, %3) : (i32, i32) -> (i32)  // uses its own result!
+  %2 = "op2"(%1, %3) : (i32, i32) -> (i32)
+  %3 = "op3"(%1) : (i32) -> (i32)            // defined after use
+}) : () -> ()
+
+// Contrast with SSACFG: strict dominance, no forward refs
+func.func @ssacfg() {
+^bb0:
+  %x = arith.constant 1 : i32  // must dominate all uses
+  cf.br ^bb1
+^bb1:
+  "use"(%x) : (i32) -> ()      // %x visible due to dominance
+}</pre>
+<p>Graph regions currently require a single block. This enables dialect-specific scheduling without imposing CFG structure on inherently parallel computations.</p>`,
+      related: ["Region", "Operation", "Dialect"],
+      usedIn: ["mlir"],
+      sources: [
+        { label: "MLIR LangRef — Graph Regions", url: "https://mlir.llvm.org/docs/LangRef/#graph-regions" }
+      ]
+    },
+    terminator: {
+      name: "Terminator",
+      role: "Structure",
+      summary: "The last operation in an SSACFG block that specifies control-flow successors or returns control to the parent operation.",
+      definition: "In SSACFG regions, every block must end with a terminator operation — an op with the IsTerminator trait that specifies which blocks control transfers to (successors) or returns values to the parent operation. Examples: cf.br (unconditional branch), cf.cond_br (conditional), func.return, scf.yield. Terminators pass block arguments to successors, implementing the parallel-copy semantics that replace phi nodes.",
+      examples: `<pre>func.func @terminators(%cond: i1, %val: i64) -> i64 {
+^entry:
+  // cf.cond_br is a terminator with two successors
+  cf.cond_br %cond, ^then(%val: i64), ^else(%val: i64)
+
+^then(%a: i64):
+  %doubled = arith.muli %a, %a : i64
+  // cf.br is a terminator with one successor
+  cf.br ^merge(%doubled: i64)
+
+^else(%b: i64):
+  cf.br ^merge(%b: i64)
+
+^merge(%result: i64):
+  // func.return is a terminator that exits the function
+  return %result : i64
+}</pre>
+<p>The <code>NoTerminator</code> trait exempts regions from this requirement (e.g., <code>module</code> bodies). Without terminators, there is no control flow — useful for declaration containers.</p>`,
+      related: ["Block", "Region", "Operation"],
+      usedIn: ["mlir", "lowering-pipelines"],
+      sources: [
+        { label: "MLIR LangRef — Control Flow", url: "https://mlir.llvm.org/docs/LangRef/#control-flow-and-ssacfg-regions" }
+      ]
     }
   }
 };
