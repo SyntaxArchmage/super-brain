@@ -1,0 +1,69 @@
+(function () {
+  "use strict";
+
+  var mainEl = document.getElementById("face-main");
+
+  // Load the topic registry and render cards.
+  // Works with both HTTP server (fetch) and file:// (inline fallback).
+  function loadRegistry() {
+    if (typeof fetch !== "undefined" && location.protocol !== "file:") {
+      fetch("./topic-registry.json")
+        .then(function (r) { return r.json(); })
+        .then(render)
+        .catch(function () { renderFallback(); });
+    } else {
+      renderFallback();
+    }
+  }
+
+  function renderFallback() {
+    // file:// can't fetch JSON — render a minimal message with direct links
+    mainEl.innerHTML =
+      '<div class="face-loading">' +
+      "Serve with an HTTP server to see the full Face Page.<br/>" +
+      'Or navigate directly: ' +
+      '<a href="topics/compiler-research/">Compiler Research</a> · ' +
+      '<a href="topics/mpv-research/">MPV Research</a>' +
+      "</div>";
+  }
+
+  function render(topics) {
+    if (!topics || topics.length === 0) {
+      mainEl.innerHTML = '<div class="face-loading">No topics found.</div>';
+      return;
+    }
+
+    var html = '<div class="face-grid">';
+    topics.forEach(function (topic) {
+      html +=
+        '<div class="topic-card" data-path="' + topic.path + '">' +
+          '<div class="topic-card-header">' +
+            '<div class="topic-card-icon" style="background:' + (topic.color || "#1d4ed8") + '">' +
+              topic.icon +
+            '</div>' +
+            '<div>' +
+              '<div class="topic-card-title">' + topic.title + '</div>' +
+              '<div class="topic-card-status ' + topic.status + '">' + topic.status + '</div>' +
+            '</div>' +
+          '</div>' +
+          '<div class="topic-card-desc">' + topic.subtitle + '</div>' +
+          '<div class="topic-card-stats">' +
+            '<div class="topic-stat"><span class="topic-stat-num">' + (topic.articles || 0) + '</span> articles</div>' +
+            '<div class="topic-stat"><span class="topic-stat-num">' + (topic.concepts || 0) + '</span> concepts</div>' +
+            '<div class="topic-stat">Updated ' + (topic.updated || "—") + '</div>' +
+          '</div>' +
+          '<div class="topic-card-arrow">\u203a</div>' +
+        '</div>';
+    });
+    html += '</div>';
+    mainEl.innerHTML = html;
+
+    mainEl.querySelectorAll(".topic-card").forEach(function (card) {
+      card.addEventListener("click", function () {
+        window.location.href = card.dataset.path;
+      });
+    });
+  }
+
+  loadRegistry();
+})();

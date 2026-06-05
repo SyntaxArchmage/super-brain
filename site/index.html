@@ -7,19 +7,29 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&family=IBM+Plex+Mono:wght@400;500&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="./styles.css" />
+    <link rel="stylesheet" href="./face.css" />
   </head>
   <body>
-    <div class="wiki-shell">
-      <nav class="taxonomy-nav" id="taxonomy-nav" aria-label="Knowledge taxonomy"></nav>
-      <main class="article-area" id="article-area"></main>
-      <aside class="concept-rail" id="concept-rail"></aside>
+    <div class="face-page" id="face-page">
+      <header class="face-header">
+        <div class="face-brand">
+          <div class="face-brand-icon">SB</div>
+          <div>
+            <div class="face-brand-title">Super Brain</div>
+            <div class="face-brand-subtitle">Personal Research Knowledge Base</div>
+          </div>
+        </div>
+      </header>
+      <main class="face-main" id="face-main">
+        <div class="face-loading">Loading topics...</div>
+      </main>
+      <footer class="face-footer">
+        <span>Super Brain &mdash; a wiki of wikis for deep research</span>
+      </footer>
     </div>
-    <script src="./data.js"></script>
-    <script src="./data-cn.js"></script>
-    <script src="./app.js"></script>
+    <script src="./face.js"></script>
   </body>
 </html>
