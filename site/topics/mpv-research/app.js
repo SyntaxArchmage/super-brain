@@ -6,7 +6,7 @@
     features: {
       search: false,
       conceptRail: true,
-      contributions: false,
+      contributions: true,
       i18n: false,
     },
     labels: {

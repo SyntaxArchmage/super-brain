@@ -93,6 +93,22 @@ body {
   padding: 48px;
 }
 
+.face-category {
+  margin-bottom: 40px;
+}
+
+.face-category-label {
+  font-family: var(--font-ui);
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--c-text-tertiary);
+  margin-bottom: 16px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--c-border-subtle);
+}
+
 .face-loading {
   text-align: center;
   color: var(--c-text-tertiary);

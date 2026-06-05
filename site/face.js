@@ -27,35 +27,47 @@
       "</div>";
   }
 
-  function render(topics) {
-    if (!topics || topics.length === 0) {
+  function render(data) {
+    // Support both old flat array and new categorized format
+    var categories;
+    if (Array.isArray(data)) {
+      categories = [{ id: "all", label: "All Topics", topics: data }];
+    } else if (data && data.categories) {
+      categories = data.categories;
+    } else {
       mainEl.innerHTML = '<div class="face-loading">No topics found.</div>';
       return;
     }
 
-    var html = '<div class="face-grid">';
-    topics.forEach(function (topic) {
-      html +=
-        '<div class="topic-card" data-path="' + topic.path + '">' +
-          '<div class="topic-card-header">' +
-            '<div class="topic-card-icon" style="background:' + (topic.color || "#1d4ed8") + '">' +
-              topic.icon +
+    var html = "";
+    categories.forEach(function (cat) {
+      if (!cat.topics || cat.topics.length === 0) return;
+      html += '<div class="face-category">';
+      html += '<div class="face-category-label">' + cat.label + '</div>';
+      html += '<div class="face-grid">';
+      cat.topics.forEach(function (topic) {
+        html +=
+          '<div class="topic-card" data-path="' + topic.path + '">' +
+            '<div class="topic-card-header">' +
+              '<div class="topic-card-icon" style="background:' + (topic.color || "#1d4ed8") + '">' +
+                topic.icon +
+              '</div>' +
+              '<div>' +
+                '<div class="topic-card-title">' + topic.title + '</div>' +
+                '<div class="topic-card-status ' + topic.status + '">' + topic.status + '</div>' +
+              '</div>' +
             '</div>' +
-            '<div>' +
-              '<div class="topic-card-title">' + topic.title + '</div>' +
-              '<div class="topic-card-status ' + topic.status + '">' + topic.status + '</div>' +
+            '<div class="topic-card-desc">' + topic.subtitle + '</div>' +
+            '<div class="topic-card-stats">' +
+              '<div class="topic-stat"><span class="topic-stat-num">' + (topic.articles || 0) + '</span> articles</div>' +
+              '<div class="topic-stat"><span class="topic-stat-num">' + (topic.concepts || 0) + '</span> concepts</div>' +
+              '<div class="topic-stat">Updated ' + (topic.updated || "\u2014") + '</div>' +
             '</div>' +
-          '</div>' +
-          '<div class="topic-card-desc">' + topic.subtitle + '</div>' +
-          '<div class="topic-card-stats">' +
-            '<div class="topic-stat"><span class="topic-stat-num">' + (topic.articles || 0) + '</span> articles</div>' +
-            '<div class="topic-stat"><span class="topic-stat-num">' + (topic.concepts || 0) + '</span> concepts</div>' +
-            '<div class="topic-stat">Updated ' + (topic.updated || "—") + '</div>' +
-          '</div>' +
-          '<div class="topic-card-arrow">\u203a</div>' +
-        '</div>';
+            '<div class="topic-card-arrow">\u203a</div>' +
+          '</div>';
+      });
+      html += '</div></div>';
     });
-    html += '</div>';
     mainEl.innerHTML = html;
 
     mainEl.querySelectorAll(".topic-card").forEach(function (card) {
