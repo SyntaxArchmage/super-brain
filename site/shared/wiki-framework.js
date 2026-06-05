@@ -166,7 +166,8 @@ var WikiEngine = (function () {
       if (homeUrl) {
         html +=
           '<a class="nav-home-link" href="' + homeUrl + '">' +
-          '<span class="nav-home-arrow">\u2190</span> Super Brain</a>';
+          '<span class="nav-home-arrow">\u2190</span>' +
+          '<span class="nav-home-label">Super Brain</span></a>';
       }
 
       html +=
