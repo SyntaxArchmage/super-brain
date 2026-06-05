@@ -1,0 +1,10 @@
+{
+  "id": "compiler-research",
+  "title": "Compiler & Systems Research",
+  "subtitle": "MLIR, compiler infrastructure, HPC, AI systems, and programming language theory.",
+  "icon": "SB",
+  "color": "#1d4ed8",
+  "status": "active",
+  "translate": true,
+  "updated": "2026-05-24"
+}

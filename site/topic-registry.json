@@ -1,0 +1,26 @@
+[
+  {
+    "id": "compiler-research",
+    "title": "Compiler & Systems Research",
+    "subtitle": "MLIR, compiler infrastructure, HPC, AI systems, and programming language theory.",
+    "icon": "SB",
+    "color": "#1d4ed8",
+    "status": "active",
+    "articles": 11,
+    "concepts": 33,
+    "updated": "2026-05-24",
+    "path": "topics/compiler-research/"
+  },
+  {
+    "id": "mpv-research",
+    "title": "MPV 购车调研",
+    "subtitle": "从动力电池到智能驾驶，全维度深度对比 10 款主流 MPV。",
+    "icon": "MPV",
+    "color": "#7c3aed",
+    "status": "complete",
+    "articles": 16,
+    "concepts": 20,
+    "updated": "2026-06-03",
+    "path": "topics/mpv-research/"
+  }
+]
