@@ -4,7 +4,8 @@
  * Only re-translates fields whose content hash has changed.
  *
  * Usage:
- *   node translate.js
+ *   node translate.js                          # legacy: site/data.js
+ *   node translate.js site/topics/foo/data.js  # multi-topic: specific topic
  *   node translate.js --dry-run
  *
  * Zero API keys required. Uses Google's free translation endpoint directly.
@@ -12,13 +13,18 @@
 
 import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
-import { resolve, dirname } from "node:path";
+import { resolve, dirname, basename } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const SITE_DIR = resolve(__dirname, "../site");
-const DATA_PATH = resolve(SITE_DIR, "data.js");
-const DATA_CN_PATH = resolve(SITE_DIR, "data-cn.js");
+const REPO_ROOT = resolve(__dirname, "..");
+
+// Accept optional positional arg for the data.js path (multi-topic support)
+const positionalArgs = process.argv.slice(2).filter(a => !a.startsWith("--"));
+const DATA_PATH = positionalArgs.length > 0
+  ? resolve(REPO_ROOT, positionalArgs[0])
+  : resolve(REPO_ROOT, "site/data.js");
+const DATA_CN_PATH = resolve(dirname(DATA_PATH), "data-cn.js");
 const HASH_PATH = resolve(__dirname, ".translate-hashes.json");
 
 const DRY_RUN = process.argv.includes("--dry-run");

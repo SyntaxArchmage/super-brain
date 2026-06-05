@@ -3,7 +3,7 @@ name: Auto-translate to Chinese
 on:
   push:
     branches: [main]
-    paths: ['site/data.js']
+    paths: ['site/topics/*/data.js']
   workflow_dispatch:
 
 permissions:
@@ -21,17 +21,31 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Run translation
-        run: node scripts/translate.js
+      - name: Discover and translate topics
+        run: |
+          for data_file in site/topics/*/data.js; do
+            topic_dir=$(dirname "$data_file")
+            meta="$topic_dir/topic-meta.json"
+            # Skip topics that opt out of translation
+            if [ -f "$meta" ]; then
+              translate=$(node -e "console.log(JSON.parse(require('fs').readFileSync('$meta','utf8')).translate !== false)")
+              if [ "$translate" = "false" ]; then
+                echo "Skipping $topic_dir (translate: false)"
+                continue
+              fi
+            fi
+            echo "Translating $data_file ..."
+            node scripts/translate.js "$data_file"
+          done
 
       - name: Commit and push
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add site/data-cn.js scripts/.translate-hashes.json
+          git add 'site/topics/*/data-cn.js' scripts/.translate-hashes.json
           if git diff --cached --quiet; then
             echo "No translation changes to commit."
           else
-            git commit -m "chore: auto-translate data-cn.js"
+            git commit -m "chore: auto-translate topic data-cn.js files"
             git push
           fi
