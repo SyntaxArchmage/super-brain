@@ -21,4 +21,12 @@ registerTopics(program);
 registerNew(program);
 registerServe(program);
 
+program
+  .command("mcp-serve")
+  .description("Start the MCP server (stdio transport, for AI agent integration)")
+  .action(async () => {
+    const { startMcpServer } = await import("../src/mcp/server.js");
+    await startMcpServer();
+  });
+
 program.parse();

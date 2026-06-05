@@ -13,11 +13,18 @@
     "test": "node --test src/**/*.test.js"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "chalk": "^5.3.0",
     "cli-table3": "^0.6.5",
     "commander": "^12.1.0",
-    "minisearch": "^7.1.1"
+    "minisearch": "^7.1.1",
+    "zod": "^4.4.3"
   },
-  "keywords": ["knowledge-base", "cli", "wiki", "research"],
+  "keywords": [
+    "knowledge-base",
+    "cli",
+    "wiki",
+    "research"
+  ],
   "license": "MIT"
 }
