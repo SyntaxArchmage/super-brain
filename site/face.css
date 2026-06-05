@@ -125,6 +125,9 @@ body {
 
 /* Topic card */
 .topic-card {
+  display: block;
+  text-decoration: none;
+  color: inherit;
   background: var(--c-surface);
   border: 1px solid var(--c-border);
   border-radius: var(--radius-xl);

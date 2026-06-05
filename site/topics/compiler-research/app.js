@@ -3,7 +3,8 @@
     data: WIKI,
     dataCN: typeof WIKI_CN !== "undefined" ? WIKI_CN : null,
     container: document.getElementById("wiki-shell"),
-    brand: { icon: "SB", text: "Super Brain" },
+    homeUrl: "../../",
+    brand: { icon: "SB", text: "Compiler Research" },
     features: {
       search: true,
       conceptRail: true,

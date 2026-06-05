@@ -16,6 +16,7 @@ var WikiEngine = (function () {
       opts.features || {}
     );
     var brand = opts.brand || { icon: "SB", text: "Super Brain" };
+    var homeUrl = opts.homeUrl || null;
     var labels = Object.assign(
       {
         domains: "Knowledge Domains",
@@ -160,7 +161,15 @@ var WikiEngine = (function () {
         }
       });
 
-      var html =
+      var html = "";
+
+      if (homeUrl) {
+        html +=
+          '<a class="nav-home-link" href="' + homeUrl + '">' +
+          '<span class="nav-home-arrow">\u2190</span> Super Brain</a>';
+      }
+
+      html +=
         '<div class="nav-brand" id="nav-home">' +
         '<div class="nav-brand-icon">' +
         brand.icon +

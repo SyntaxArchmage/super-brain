@@ -47,7 +47,7 @@
       html += '<div class="face-grid">';
       cat.topics.forEach(function (topic) {
         html +=
-          '<div class="topic-card" data-path="' + topic.path + '">' +
+          '<a class="topic-card" href="' + topic.path + '">' +
             '<div class="topic-card-header">' +
               '<div class="topic-card-icon" style="background:' + (topic.color || "#1d4ed8") + '">' +
                 topic.icon +
@@ -64,17 +64,13 @@
               '<div class="topic-stat">Updated ' + (topic.updated || "\u2014") + '</div>' +
             '</div>' +
             '<div class="topic-card-arrow">\u203a</div>' +
-          '</div>';
+          '</a>';
       });
       html += '</div></div>';
     });
     mainEl.innerHTML = html;
 
-    mainEl.querySelectorAll(".topic-card").forEach(function (card) {
-      card.addEventListener("click", function () {
-        window.location.href = card.dataset.path;
-      });
-    });
+    // Cards are native <a> tags — no JS click handler needed
   }
 
   loadRegistry();

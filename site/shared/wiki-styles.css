@@ -101,6 +101,30 @@ body {
   border-radius: 2px;
 }
 
+.nav-home-link {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px var(--space-sm);
+  margin-bottom: var(--space-xs);
+  font-family: var(--font-ui);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  color: var(--c-text-tertiary);
+  text-decoration: none;
+  border-radius: var(--radius);
+  transition: background 0.12s, color 0.12s;
+}
+
+.nav-home-link:hover {
+  background: var(--c-nav-hover);
+  color: var(--c-accent);
+}
+
+.nav-home-arrow {
+  font-size: 0.75rem;
+}
+
 .nav-brand {
   display: flex;
   align-items: center;

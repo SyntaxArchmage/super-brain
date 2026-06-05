@@ -2,6 +2,7 @@
   var engine = WikiEngine.create({
     data: WIKI,
     container: document.getElementById("wiki-shell"),
+    homeUrl: "../../",
     brand: { icon: "MPV", text: "MPV 调研" },
     features: {
       search: false,
