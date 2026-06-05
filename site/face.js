@@ -47,7 +47,7 @@
       html += '<div class="face-grid">';
       cat.topics.forEach(function (topic) {
         html +=
-          '<a class="topic-card" href="' + topic.path + '">' +
+          '<a class="topic-card" href="' + topic.path + '" style="--topic-color:' + (topic.color || "#1d4ed8") + '">' +
             '<div class="topic-card-header">' +
               '<div class="topic-card-icon" style="background:' + (topic.color || "#1d4ed8") + '">' +
                 topic.icon +
