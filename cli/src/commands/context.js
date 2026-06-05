@@ -1,7 +1,6 @@
 import chalk from "chalk";
-import { findRepoRoot } from "../core/config.js";
-import { loadAllTopics } from "../core/loader.js";
-import { buildIndex, stripHtml } from "../core/indexer.js";
+import { resolveTopics } from "../core/resolve.js";
+import { buildIndex } from "../core/indexer.js";
 
 export function registerContext(program) {
   program
@@ -10,13 +9,9 @@ export function registerContext(program) {
     .option("--topic <id>", "Limit to a specific topic")
     .option("--max-tokens <n>", "Approximate max tokens (chars/4)", "500")
     .option("--format <fmt>", "Output format: text, md", "text")
-    .action((subject, opts) => {
-      const root = findRepoRoot();
-      if (!root) {
-        console.error("Error: could not find a super-brain repo.");
-        process.exit(1);
-      }
-      const topics = loadAllTopics(root);
+    .option("--remote <url>", "Fetch from remote URL (GitHub Pages)")
+    .action(async (subject, opts) => {
+      const topics = await resolveTopics(opts);
       const { index, docs } = buildIndex(topics);
 
       let results = index.search(subject, {

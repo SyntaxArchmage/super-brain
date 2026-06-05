@@ -1,6 +1,5 @@
 import chalk from "chalk";
-import { findRepoRoot } from "../core/config.js";
-import { loadAllTopics } from "../core/loader.js";
+import { resolveTopics } from "../core/resolve.js";
 import { stripHtml } from "../core/indexer.js";
 
 export function registerCompare(program) {
@@ -8,13 +7,9 @@ export function registerCompare(program) {
     .command("compare <a> <b>")
     .description("Side-by-side comparison of two concepts")
     .option("--format <fmt>", "Output format: text, json, md", "text")
-    .action((a, b, opts) => {
-      const root = findRepoRoot();
-      if (!root) {
-        console.error("Error: could not find a super-brain repo.");
-        process.exit(1);
-      }
-      const topics = loadAllTopics(root);
+    .option("--remote <url>", "Fetch from remote URL (GitHub Pages)")
+    .action(async (a, b, opts) => {
+      const topics = await resolveTopics(opts);
       const cA = findConcept(topics, a);
       const cB = findConcept(topics, b);
 

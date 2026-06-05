@@ -1,6 +1,5 @@
 import chalk from "chalk";
-import { findRepoRoot } from "../core/config.js";
-import { loadAllTopics } from "../core/loader.js";
+import { resolveTopics } from "../core/resolve.js";
 import { buildIndex } from "../core/indexer.js";
 import { buildRagPrompt } from "../llm/prompts.js";
 import { chat, detectProvider } from "../llm/provider.js";
@@ -12,6 +11,7 @@ export function registerAsk(program) {
     .option("--model <model>", "LLM model to use")
     .option("--topic <id>", "Limit context to a specific topic")
     .option("--provider <name>", "Force provider: openai, anthropic, ollama")
+    .option("--remote <url>", "Fetch from remote URL (GitHub Pages)")
     .action(async (question, opts) => {
       const provider = opts.provider || detectProvider();
       if (!provider) {
@@ -27,14 +27,8 @@ export function registerAsk(program) {
         process.exit(1);
       }
 
-      const root = findRepoRoot();
-      if (!root) {
-        console.error("Error: could not find a super-brain repo.");
-        process.exit(1);
-      }
-
       console.log(chalk.dim(`  Searching knowledge base...`));
-      const topics = loadAllTopics(root);
+      const topics = await resolveTopics(opts);
       const { index, docs } = buildIndex(topics);
 
       let results = index.search(question, {

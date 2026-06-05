@@ -1,5 +1,4 @@
-import { findRepoRoot } from "../core/config.js";
-import { loadAllTopics } from "../core/loader.js";
+import { resolveTopics } from "../core/resolve.js";
 import { buildIndex } from "../core/indexer.js";
 import { formatSearchResults } from "../core/formatter.js";
 
@@ -11,14 +10,10 @@ export function registerSearch(program) {
     .option("--type <type>", "Filter by type: page or concept")
     .option("--format <fmt>", "Output format: text, json, md", "text")
     .option("--limit <n>", "Max results", "10")
-    .action((query, opts) => {
-      const root = findRepoRoot();
-      if (!root) {
-        console.error("Error: could not find a super-brain repo. Run from inside the repo or set SB_ROOT.");
-        process.exit(1);
-      }
+    .option("--remote <url>", "Fetch from remote URL (GitHub Pages)")
+    .action(async (query, opts) => {
       const t0 = Date.now();
-      const topics = loadAllTopics(root);
+      const topics = await resolveTopics(opts);
       const { index, docs } = buildIndex(topics);
 
       let results = index.search(query, {

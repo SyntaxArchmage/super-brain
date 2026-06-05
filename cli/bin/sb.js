@@ -8,6 +8,7 @@ import { registerContext } from "../src/commands/context.js";
 import { registerAsk } from "../src/commands/ask.js";
 import { registerNew } from "../src/commands/new.js";
 import { registerServe } from "../src/commands/serve.js";
+import { registerConfig } from "../src/commands/config.js";
 
 program
   .name("sb")
@@ -22,6 +23,7 @@ registerAsk(program);
 registerTopics(program);
 registerNew(program);
 registerServe(program);
+registerConfig(program);
 
 program
   .command("mcp-serve")

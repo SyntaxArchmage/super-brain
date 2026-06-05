@@ -1,5 +1,4 @@
-import { findRepoRoot } from "../core/config.js";
-import { loadAllTopics } from "../core/loader.js";
+import { resolveTopics } from "../core/resolve.js";
 import { formatTopics } from "../core/formatter.js";
 
 export function registerTopics(program) {
@@ -8,13 +7,9 @@ export function registerTopics(program) {
     .description("List all research topics with stats")
     .option("--sort <by>", "Sort by: name, updated, articles", "name")
     .option("--format <fmt>", "Output format: text, json", "text")
-    .action((opts) => {
-      const root = findRepoRoot();
-      if (!root) {
-        console.error("Error: could not find a super-brain repo.");
-        process.exit(1);
-      }
-      const topics = loadAllTopics(root);
+    .option("--remote <url>", "Fetch from remote URL (GitHub Pages)")
+    .action(async (opts) => {
+      const topics = await resolveTopics(opts);
 
       if (opts.sort === "updated") {
         topics.sort((a, b) => (b.meta.updated || "").localeCompare(a.meta.updated || ""));

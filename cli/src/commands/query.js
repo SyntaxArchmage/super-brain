@@ -1,5 +1,4 @@
-import { findRepoRoot } from "../core/config.js";
-import { loadAllTopics } from "../core/loader.js";
+import { resolveTopics } from "../core/resolve.js";
 import { formatConcept } from "../core/formatter.js";
 
 export function registerQuery(program) {
@@ -8,13 +7,9 @@ export function registerQuery(program) {
     .description("Look up a specific concept by name")
     .option("--topic <id>", "Limit to a specific topic")
     .option("--format <fmt>", "Output format: text, json", "text")
-    .action((conceptName, opts) => {
-      const root = findRepoRoot();
-      if (!root) {
-        console.error("Error: could not find a super-brain repo.");
-        process.exit(1);
-      }
-      const topics = loadAllTopics(root);
+    .option("--remote <url>", "Fetch from remote URL (GitHub Pages)")
+    .action(async (conceptName, opts) => {
+      const topics = await resolveTopics(opts);
       const needle = conceptName.toLowerCase();
       let found = null;
       let topicTitle = "";
@@ -34,7 +29,6 @@ export function registerQuery(program) {
       }
 
       if (!found) {
-        // Fall back: search in page-level concepts arrays
         for (const topic of topics) {
           if (opts.topic && topic.id !== opts.topic) continue;
           for (const page of Object.values(topic.wiki.pages || {})) {
