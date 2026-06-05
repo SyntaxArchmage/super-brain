@@ -5,6 +5,7 @@ import { registerQuery } from "../src/commands/query.js";
 import { registerTopics } from "../src/commands/topics.js";
 import { registerCompare } from "../src/commands/compare.js";
 import { registerContext } from "../src/commands/context.js";
+import { registerAsk } from "../src/commands/ask.js";
 import { registerNew } from "../src/commands/new.js";
 import { registerServe } from "../src/commands/serve.js";
 
@@ -17,6 +18,7 @@ registerSearch(program);
 registerQuery(program);
 registerCompare(program);
 registerContext(program);
+registerAsk(program);
 registerTopics(program);
 registerNew(program);
 registerServe(program);
