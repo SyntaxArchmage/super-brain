@@ -1,0 +1,10 @@
+{
+  "id": "ai-inference-infra",
+  "title": "AI Inference Infrastructure",
+  "subtitle": "From PagedAttention to production serving — vLLM, SGLang, Ollama, and the optimization stack for LLM inference.",
+  "icon": "AI",
+  "color": "#dc2626",
+  "status": "active",
+  "translate": false,
+  "updated": "2026-06-08"
+}

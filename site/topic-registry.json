@@ -15,6 +15,18 @@
           "concepts": 33,
           "updated": "2026-05-24",
           "path": "topics/compiler-research/"
+        },
+        {
+          "id": "ai-inference-infra",
+          "title": "AI Inference Infrastructure",
+          "subtitle": "From PagedAttention to production serving — vLLM, SGLang, Ollama, and the optimization stack for LLM inference.",
+          "icon": "AI",
+          "color": "#dc2626",
+          "status": "active",
+          "articles": 13,
+          "concepts": 37,
+          "updated": "2026-06-08",
+          "path": "topics/ai-inference-infra/"
         }
       ]
     },
