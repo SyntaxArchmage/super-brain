@@ -1,0 +1,20 @@
+{"source": "paged-attention", "target": "kv-cache", "type": "solves", "text": "PagedAttention eliminates KV cache memory waste through virtual-memory-style paging."}
+{"source": "paged-attention", "target": "inference-landscape", "type": "solves", "text": "PagedAttention addresses the memory management bottleneck identified in the inference problem analysis."}
+{"source": "vllm", "target": "paged-attention", "type": "implements", "text": "vLLM was built around PagedAttention as its core innovation."}
+{"source": "sglang", "target": "paged-attention", "type": "extends", "text": "SGLang's RadixAttention extends the paged approach with automatic prefix discovery via radix tree."}
+{"source": "flash-attention", "target": "kv-cache", "type": "optimizes", "text": "FlashAttention reduces HBM access for attention computation through IO-aware tiling."}
+{"source": "flash-attention", "target": "vllm", "type": "used-by", "text": "vLLM uses FlashAttention/FlashInfer as its attention kernel backend."}
+{"source": "flash-attention", "target": "sglang", "type": "used-by", "text": "SGLang uses FlashInfer (based on FlashAttention principles) for paged attention kernels."}
+{"source": "batching-scheduling", "target": "inference-landscape", "type": "solves", "text": "Continuous batching solves GPU underutilization during the memory-bound decode phase."}
+{"source": "batching-scheduling", "target": "vllm", "type": "used-by", "text": "vLLM implements continuous batching with iteration-level scheduling."}
+{"source": "batching-scheduling", "target": "sglang", "type": "used-by", "text": "SGLang implements continuous batching with cache-aware scheduling."}
+{"source": "speculative-decoding", "target": "inference-landscape", "type": "solves", "text": "Speculative decoding addresses the sequential decode bottleneck by parallelizing verification."}
+{"source": "disaggregated-serving", "target": "inference-landscape", "type": "solves", "text": "Disaggregated serving resolves the prefill-decode interference by physical separation."}
+{"source": "disaggregated-serving", "target": "vllm", "type": "used-by", "text": "vLLM supports disaggregated prefill/decode deployment."}
+{"source": "moe-serving", "target": "inference-landscape", "type": "extends", "text": "MoE serving introduces unique memory/communication challenges beyond standard dense model inference."}
+{"source": "tensorrt-llm", "target": "flash-attention", "type": "uses", "text": "TensorRT-LLM integrates FlashAttention kernels and fuses them with surrounding ops."}
+{"source": "ollama-llamacpp", "target": "inference-landscape", "type": "instance-of", "text": "Ollama/llama.cpp serves the local inference niche with different trade-offs than production systems."}
+{"source": "benchmarks", "target": "vllm", "type": "evaluates", "text": "Benchmark data compares vLLM throughput and latency against alternatives."}
+{"source": "benchmarks", "target": "sglang", "type": "evaluates", "text": "Benchmark data compares SGLang throughput and latency against alternatives."}
+{"source": "benchmarks", "target": "tensorrt-llm", "type": "evaluates", "text": "Benchmark data compares TensorRT-LLM peak performance against alternatives."}
+{"source": "kv-cache", "target": "inference-landscape", "type": "defines", "text": "KV cache is the central memory constraint introduced by the autoregressive inference problem."}

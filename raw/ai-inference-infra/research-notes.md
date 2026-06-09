@@ -227,6 +227,184 @@ Apply OS virtual memory paging to KV cache management.
 
 ---
 
+## 6b. FlashAttention — IO-Aware Exact Attention
+
+### Source
+- Dao et al., "FlashAttention: Fast and Memory-Efficient Exact Attention with IO-Awareness", NeurIPS 2022. arXiv:2205.14135
+- Dao, "FlashAttention-2: Faster Attention with Better Parallelism and Work Partitioning", 2023. arXiv:2307.08691
+- Shah et al., "FlashAttention-3: Fast and Accurate Attention with Asynchrony and Low-precision", 2024. arXiv:2407.08691
+
+### Core Insight
+Standard attention writes O(N²) intermediate results to HBM. FlashAttention restructures the computation to keep everything in SRAM (on-chip), reducing HBM reads/writes from O(N²) to O(N).
+
+### Mechanism
+1. **Tiling**: Split Q, K, V into blocks that fit in SRAM
+2. **Online softmax**: Compute softmax incrementally per block without materializing full N×N matrix
+3. **Recomputation**: On backward pass, recompute attention from Q,K,V in SRAM rather than storing the N×N matrix
+
+### IO Complexity
+- Standard attention: O(N² d) HBM accesses (reads/writes the N×N attention matrix)
+- FlashAttention: O(N² d² / M) HBM accesses (where M = SRAM size)
+- Typical speedup: 2-4x wall-clock, exact results (not approximate)
+
+### FlashAttention-2 improvements
+- Better work partitioning across warps within a thread block
+- Reduces non-matmul FLOPs (masking, softmax) relative to matmul FLOPs
+- Achieves 50-73% of theoretical max FLOPS on A100 (vs 25-40% for FA1)
+
+### FlashAttention-3 improvements (Hopper architecture)
+- Exploits asynchronous execution (warp-specialization: producer/consumer warps)
+- Uses Tensor Memory Accelerator (TMA) for async data movement
+- FP8 quantization for further speed with low precision
+- Achieves 740 TFLOPS on H100 (close to theoretical max)
+
+### Relationship to inference
+- FlashAttention is used in prefill phase (compute-bound, benefits from FLOPS)
+- During decode (single token), attention is inherently memory-bound — FlashAttention helps less
+- All major frameworks (vLLM, SGLang, TensorRT-LLM) use FlashAttention or FlashInfer as their attention backend
+- FlashInfer (used by SGLang) extends the tiling approach to paged KV cache
+
+---
+
+## 6c. TensorRT-LLM — NVIDIA's Optimized Stack
+
+### Source
+- NVIDIA TensorRT-LLM documentation: https://nvidia.github.io/TensorRT-LLM/
+- NVIDIA blog: "Optimizing Inference on Large Language Models with NVIDIA TensorRT-LLM" (2024)
+- Spheron benchmarks (2026): vLLM vs TensorRT-LLM vs SGLang
+
+### Architecture
+1. **Graph compiler**: Converts model definition into optimized execution graph
+   - Layer fusion: combines multiple ops into single CUDA kernels
+   - Kernel auto-tuning: selects fastest kernel variant for each op + hardware combo
+   - Quantization integration: FP8/INT8/INT4 calibration baked into graph
+2. **Runtime**: Executes compiled graph with:
+   - CUDA Graphs: eliminates kernel launch overhead by capturing entire decode step
+   - In-flight batching: similar to continuous batching but at CUDA graph level
+   - Multi-GPU: tensor parallelism, pipeline parallelism, expert parallelism
+3. **Triton integration**: TensorRT-LLM can use Triton Inference Server as frontend
+
+### Key differentiators from vLLM/SGLang
+- Compile-time optimization (ahead-of-time vs JIT)
+- Deeper NVIDIA hardware integration (cuBLAS, CUTLASS, CUDA Graphs)
+- Higher peak performance but much longer setup time (~28 min cold start vs ~60s)
+- Narrower hardware support (NVIDIA only)
+- More complex deployment (model compilation step required)
+
+### When to choose TensorRT-LLM
+- Maximum throughput on NVIDIA hardware is the priority
+- Stable model (not switching models frequently — compilation is expensive)
+- Latency-critical applications where 10-15% improvement matters
+- Large-scale deployments where efficiency gains amortize setup complexity
+
+---
+
+## 6d. Speculative Decoding
+
+### Source
+- Leviathan et al., "Fast Inference from Transformers via Speculative Decoding", ICML 2023. arXiv:2211.17192
+- Chen et al., "Accelerating Large Language Model Decoding with Speculative Sampling", 2023. arXiv:2302.01318
+- vLLM docs: speculative decoding support (n-gram, draft model, EAGLE, Medusa)
+
+### Core Insight
+Decode is slow because it's sequential (one token at a time). But verifying multiple tokens in parallel is fast (it's just a prefill-like forward pass). Speculative decoding exploits this asymmetry.
+
+### Mechanism
+1. **Draft model** (small, fast) generates K candidate tokens cheaply
+2. **Target model** (large) verifies all K tokens in one parallel forward pass
+3. **Accept/reject**: tokens accepted from left-to-right until first rejection
+4. **Guarantee**: output distribution is identical to target model alone (no quality loss)
+
+### Acceptance rate determines speedup
+- If draft model matches target well → most tokens accepted → near K× speedup
+- If draft model diverges → frequent rejections → overhead without gain
+- Typical speedup: 2-3x on well-matched pairs
+
+### Variants in production (2026)
+- **N-gram speculation**: use existing KV cache to predict next tokens (no draft model needed)
+- **EAGLE**: trained draft heads that predict next-token embedding directly
+- **Medusa**: multiple prediction heads on target model itself (no separate model)
+- **Suffix decoding**: match from prompt/context (good for repetitive outputs)
+
+### Limitations
+- Requires extra memory for draft model
+- Speedup varies wildly by task (code generation: high acceptance; creative writing: low)
+- Verification step has overhead even when all tokens accepted
+
+---
+
+## 6e. Continuous Batching & Scheduling
+
+### Source
+- Yu et al., "ORCA: A Distributed Serving System for Transformer-Based Generative Models", OSDI 2022
+- Kwon et al., SOSP 2023 (vLLM paper describes continuous batching integration)
+- vLLM / SGLang scheduler documentation
+
+### The problem with static batching
+- All requests padded to max_seq_len → wasted compute on padding tokens
+- Entire batch waits for longest sequence to finish → GPU idle when short sequences complete
+- Cannot insert new requests until entire batch is done
+
+### Continuous batching (iteration-level scheduling)
+1. After each decode iteration, check for completed/new requests
+2. Remove completed sequences immediately (free their KV cache)
+3. Insert waiting requests into available slots
+4. Each token generation step can have a different batch composition
+
+### Result
+- No padding waste
+- No waiting for slowest request
+- GPU utilization stays high (slots immediately refilled)
+- Typical improvement: 3-10x throughput vs static batching
+
+### Chunked Prefill
+Problem: Long prompt prefills block the scheduler (no decode happens during prefill)
+Solution: Split prefill into chunks, interleave with decode steps of other requests
+Trade-off: Slightly higher TTFT for the prefilling request, much better ITL for decode requests
+
+### Scheduling policies
+- FCFS (First Come First Served): fair but not optimal for cache reuse
+- Longest Prefix Match (SGLang): prioritize requests sharing cached prefixes
+- Priority scheduling: SLO-aware, can preempt low-priority requests
+- vLLM preemption: when memory pressure hits, evict low-priority KV cache to CPU/swap
+
+---
+
+## 6f. MoE Serving — Expert Parallelism
+
+### Source
+- Shazeer et al., "Outrageously Large Neural Networks: The Sparsely-Gated Mixture-of-Experts Layer", ICLR 2017
+- DeepSeek-V3 technical report (2024): 671B total params, 37B active
+- DeepSeek EPLB (Expert-Parallel Load Balancing): https://github.com/deepseek-ai/eplb
+- vLLM Expert Parallel documentation
+
+### What makes MoE serving unique
+- Total params >> active params (e.g., DeepSeek-V3: 671B total, 37B active per token)
+- All expert weights must be loaded in memory even though most are idle per token
+- Tokens must be routed to the GPU holding their assigned expert
+- Bottleneck shifts from compute to memory capacity + inter-GPU communication
+
+### Expert Parallelism
+- Distribute experts across GPUs (each GPU holds a subset of experts)
+- All-to-all communication: send tokens to the GPU holding their expert
+- Each GPU processes only the tokens routed to its local experts
+- Return results via another all-to-all
+
+### The load balancing problem
+- Real workloads have skewed expert popularity (some experts receive 5-10x more tokens)
+- Naive distribution → hot GPUs stall the batch
+- EPLB (Expert-Parallel Load Balancing): replicate popular experts on multiple GPUs
+  - Monitors routing statistics
+  - Dynamically adjusts expert placement
+  - Balances compute load across all GPUs
+
+### Memory challenge
+- DeepSeek-V3 on 8×H100: 671B params × 2 bytes = 1.34 TB (barely fits 8×80GB HBM)
+- Expert weights dominate memory (256 experts × param_size_per_expert)
+- Offloading cold experts to CPU/NVMe is one approach but adds latency
+
+---
+
 ## 7. Inference Optimization Technique Stack
 
 ### System-Level Optimizations

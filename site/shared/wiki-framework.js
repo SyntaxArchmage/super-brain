@@ -1149,6 +1149,19 @@ var WikiEngine = (function () {
           }
         });
 
+        // Escape key hierarchy: article → index → home
+        document.addEventListener("keydown", function (e) {
+          if (e.key !== "Escape") return;
+          var searchInput = document.getElementById("nav-search-input");
+          if (searchInput && document.activeElement === searchInput) return;
+          if (main.querySelector("#cfr-back")) return;
+          if (currentPage === "index") {
+            if (homeUrl) window.location.href = homeUrl;
+          } else {
+            navigate("index");
+          }
+        });
+
         navigate("index");
       },
       getCurrentPage: function () {

@@ -27,6 +27,18 @@
           "concepts": 37,
           "updated": "2026-06-08",
           "path": "topics/ai-inference-infra/"
+        },
+        {
+          "id": "vllm-code-reading",
+          "title": "vLLM Code Reading",
+          "subtitle": "Deep code-level analysis of vLLM's architecture — from HTTP entrypoint to GPU kernel dispatch.",
+          "icon": "VL",
+          "color": "#1d4ed8",
+          "status": "active",
+          "articles": 9,
+          "concepts": 19,
+          "updated": "2026-06-08",
+          "path": "topics/vllm-code-reading/"
         }
       ]
     },

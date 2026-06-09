@@ -1,0 +1,278 @@
+# Concept Registry — AI Inference Infrastructure
+# Derived from: raw/ai-inference-infra/research-notes.md
+# Each concept maps to source sections and page appearances
+
+concepts:
+  # === Performance Metrics ===
+  - id: TTFT
+    name: "Time To First Token (TTFT)"
+    role: "Performance Metric"
+    source_section: "§1 The LLM Inference Problem Space"
+    appears_in: [inference-landscape, benchmarks, vllm, sglang]
+    related: [ITL, Prefill, PrefixCaching, ContinuousBatching]
+
+  - id: ITL
+    name: "Inter-Token Latency (ITL)"
+    role: "Performance Metric"
+    source_section: "§1 The LLM Inference Problem Space"
+    appears_in: [inference-landscape, benchmarks]
+    related: [TTFT, Decode, Throughput]
+
+  - id: Throughput
+    name: "Throughput (tok/s)"
+    role: "Performance Metric"
+    source_section: "§8 Comparative Benchmarks"
+    appears_in: [benchmarks, inference-landscape]
+    related: [TTFT, ITL, ContinuousBatching]
+
+  # === Core Mechanisms ===
+  - id: KVCache
+    name: "KV Cache"
+    role: "Core Mechanism"
+    source_section: "§2 KV Cache: The Core Memory Challenge"
+    appears_in: [inference-landscape, kv-cache, paged-attention, vllm, sglang]
+    related: [PagedAttention, GQA, MLA, Prefill, Decode]
+
+  - id: Prefill
+    name: "Prefill Phase"
+    role: "Inference Phase"
+    source_section: "§1 The LLM Inference Problem Space"
+    appears_in: [inference-landscape, kv-cache, disaggregated-serving]
+    related: [Decode, TTFT, PrefillDecodeAsymmetry]
+
+  - id: Decode
+    name: "Decode Phase"
+    role: "Inference Phase"
+    source_section: "§1 The LLM Inference Problem Space"
+    appears_in: [inference-landscape, kv-cache, disaggregated-serving]
+    related: [Prefill, ITL, SpeculativeDecoding]
+
+  - id: PrefillDecodeAsymmetry
+    name: "Prefill-Decode Asymmetry"
+    role: "Architectural Tension"
+    source_section: "§1, §9"
+    appears_in: [inference-landscape, disaggregated-serving]
+    related: [Prefill, Decode, DisaggregatedServing]
+
+  # === PagedAttention Family ===
+  - id: PagedAttention
+    name: "PagedAttention"
+    role: "Memory Management Algorithm"
+    source_section: "§3 PagedAttention"
+    appears_in: [paged-attention, vllm, kv-cache]
+    related: [BlockTable, BlockManager, CopyOnWrite, KVCache]
+
+  - id: BlockTable
+    name: "Block Table"
+    role: "Data Structure"
+    source_section: "§3 PagedAttention"
+    appears_in: [paged-attention, vllm]
+    related: [PagedAttention, BlockManager]
+
+  - id: BlockManager
+    name: "Block Manager"
+    role: "System Component"
+    source_section: "§4 vLLM Architecture"
+    appears_in: [paged-attention, vllm]
+    related: [PagedAttention, BlockTable, KVCache]
+
+  - id: CopyOnWrite
+    name: "Copy-on-Write (CoW)"
+    role: "Memory Optimization"
+    source_section: "§3 PagedAttention"
+    appears_in: [paged-attention]
+    related: [PagedAttention, PrefixCaching]
+
+  # === FlashAttention Family ===
+  - id: FlashAttention
+    name: "FlashAttention"
+    role: "Kernel Algorithm"
+    source_section: "§6b FlashAttention"
+    appears_in: [flash-attention, vllm, sglang, tensorrt-llm]
+    related: [IOAwareness, Tiling, KVCache]
+
+  - id: IOAwareness
+    name: "IO-Awareness"
+    role: "Design Principle"
+    source_section: "§6b FlashAttention"
+    appears_in: [flash-attention]
+    related: [FlashAttention, Tiling]
+
+  - id: Tiling
+    name: "Tiling (Blocking)"
+    role: "Optimization Technique"
+    source_section: "§6b FlashAttention"
+    appears_in: [flash-attention]
+    related: [FlashAttention, IOAwareness]
+
+  # === Serving Frameworks ===
+  - id: vLLM
+    name: "vLLM"
+    role: "Serving Framework"
+    source_section: "§4 vLLM"
+    appears_in: [vllm, benchmarks]
+    related: [PagedAttention, ContinuousBatching, SGLang]
+
+  - id: SGLang
+    name: "SGLang"
+    role: "Serving Framework"
+    source_section: "§5 SGLang"
+    appears_in: [sglang, benchmarks]
+    related: [RadixAttention, CompressedFSM, vLLM]
+
+  - id: RadixAttention
+    name: "RadixAttention"
+    role: "Cache Algorithm"
+    source_section: "§5 SGLang"
+    appears_in: [sglang]
+    related: [SGLang, PrefixCaching, PagedAttention, CacheAwareScheduling]
+
+  - id: CompressedFSM
+    name: "Compressed FSM Decoding"
+    role: "Structured Output Technique"
+    source_section: "§5 SGLang"
+    appears_in: [sglang]
+    related: [SGLang]
+
+  - id: CacheAwareScheduling
+    name: "Cache-Aware Scheduling"
+    role: "Scheduling Strategy"
+    source_section: "§5 SGLang"
+    appears_in: [sglang]
+    related: [RadixAttention, SGLang, Scheduler]
+
+  - id: TensorRTLLM
+    name: "TensorRT-LLM"
+    role: "Serving Framework"
+    source_section: "§6c TensorRT-LLM"
+    appears_in: [tensorrt-llm, benchmarks]
+    related: [KernelFusion, CUDAGraph, vLLM]
+
+  - id: KernelFusion
+    name: "Kernel Fusion"
+    role: "Compiler Optimization"
+    source_section: "§6c TensorRT-LLM"
+    appears_in: [tensorrt-llm]
+    related: [TensorRTLLM, CUDAGraph]
+
+  - id: CUDAGraph
+    name: "CUDA Graphs"
+    role: "Runtime Optimization"
+    source_section: "§6c TensorRT-LLM"
+    appears_in: [tensorrt-llm]
+    related: [TensorRTLLM, KernelFusion]
+
+  - id: Ollama
+    name: "Ollama"
+    role: "Local Inference Tool"
+    source_section: "§6 Ollama + llama.cpp"
+    appears_in: [ollama-llamacpp, benchmarks]
+    related: [LlamaCpp, GGUF]
+
+  - id: LlamaCpp
+    name: "llama.cpp"
+    role: "Inference Engine"
+    source_section: "§6 Ollama + llama.cpp"
+    appears_in: [ollama-llamacpp]
+    related: [Ollama, GGUF, Quantization]
+
+  - id: GGUF
+    name: "GGUF Format"
+    role: "Model Format"
+    source_section: "§6 Ollama + llama.cpp"
+    appears_in: [ollama-llamacpp]
+    related: [LlamaCpp, Quantization]
+
+  # === Optimization Techniques ===
+  - id: ContinuousBatching
+    name: "Continuous Batching"
+    role: "Scheduling Technique"
+    source_section: "§6e Continuous Batching"
+    appears_in: [inference-landscape, batching-scheduling, vllm, sglang]
+    related: [Scheduler, ChunkedPrefill, TTFT]
+
+  - id: ChunkedPrefill
+    name: "Chunked Prefill"
+    role: "Scheduling Technique"
+    source_section: "§6e Continuous Batching"
+    appears_in: [batching-scheduling]
+    related: [ContinuousBatching, Prefill]
+
+  - id: Scheduler
+    name: "Scheduler"
+    role: "System Component"
+    source_section: "§6e Continuous Batching"
+    appears_in: [batching-scheduling, vllm, sglang]
+    related: [ContinuousBatching, CacheAwareScheduling]
+
+  - id: SpeculativeDecoding
+    name: "Speculative Decoding"
+    role: "Latency Optimization"
+    source_section: "§6d Speculative Decoding"
+    appears_in: [speculative-decoding, vllm]
+    related: [DraftModel, Decode]
+
+  - id: DraftModel
+    name: "Draft Model"
+    role: "Component"
+    source_section: "§6d Speculative Decoding"
+    appears_in: [speculative-decoding]
+    related: [SpeculativeDecoding]
+
+  - id: DisaggregatedServing
+    name: "Disaggregated Serving"
+    role: "Architecture Pattern"
+    source_section: "§9 Disaggregated Prefill-Decode"
+    appears_in: [disaggregated-serving, vllm]
+    related: [PrefillDecodeAsymmetry, Prefill, Decode]
+
+  - id: PrefixCaching
+    name: "Prefix Caching"
+    role: "Memory Optimization"
+    source_section: "§5 SGLang (RadixAttention)"
+    appears_in: [sglang, vllm]
+    related: [RadixAttention, CopyOnWrite, KVCache]
+
+  # === Model-Level ===
+  - id: Quantization
+    name: "Quantization"
+    role: "Model Compression"
+    source_section: "§6, §7"
+    appears_in: [ollama-llamacpp, kv-cache]
+    related: [GGUF, GQA]
+
+  - id: GQA
+    name: "Grouped Query Attention (GQA)"
+    role: "Architecture Optimization"
+    source_section: "§7 Model-Level Optimizations"
+    appears_in: [kv-cache]
+    related: [KVCache, MLA, Quantization]
+
+  - id: MLA
+    name: "Multi-head Latent Attention (MLA)"
+    role: "Architecture Optimization"
+    source_section: "§7 Model-Level Optimizations"
+    appears_in: [kv-cache]
+    related: [KVCache, GQA]
+
+  # === MoE ===
+  - id: ExpertParallelism
+    name: "Expert Parallelism"
+    role: "Distribution Strategy"
+    source_section: "§6f MoE Serving"
+    appears_in: [moe-serving]
+    related: [MoE, EPLB]
+
+  - id: EPLB
+    name: "Expert-Parallel Load Balancing (EPLB)"
+    role: "Load Balancing Algorithm"
+    source_section: "§6f MoE Serving"
+    appears_in: [moe-serving]
+    related: [ExpertParallelism, MoE]
+
+  - id: MoE
+    name: "Mixture of Experts (MoE)"
+    role: "Model Architecture"
+    source_section: "§6f MoE Serving"
+    appears_in: [moe-serving]
+    related: [ExpertParallelism, EPLB]
